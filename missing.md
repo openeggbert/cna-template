@@ -57,44 +57,102 @@ at minimum (b) fix `README.md` §10 to use the portable float overload, and
 add a line to the SDL_RENDERER capability note in the crash message pointing
 at `Clear(r,g,b,a)` as the 2D-safe alternative.
 
-### Window visibly resizes 2-3 times at startup when `PreferredBackBufferWidth`/`Height` are set in the `Game` constructor
+### `Game` startup visibly flickers for any `Game` that owns a `GraphicsDeviceManager` — the backend gets fully reconfigured twice
 
-**Where:** interaction between `GraphicsDeviceManager` and the SDL_RENDERER
-backend's window/renderer setup path (`cna/src/CNA/Internal/Backends/SdlRenderer/`).
+**Where:** `cna/src/Microsoft/Xna/Framework/GraphicsDeviceManager.cpp` and
+`cna/src/Microsoft/Xna/Framework/Game.cpp`, specifically the interaction
+between these three call sites:
 
-**Problem:** Setting `graphics_.setPreferredBackBufferWidthProperty(800)` /
-`setPreferredBackBufferHeightProperty(600)` in the `Game` subclass
-constructor (before `Initialize()`), the idiomatic real-XNA pattern, causes
-the window to be created at some default size, then visibly resized through
-at least one intermediate size, before finally settling at the requested
-size. Confirmed in SDL debug logs from an actual run:
-```
-[Renderer] FixedHeightDynamicWidth: outputSize=800x480 logicalSize=800x480
-...
-[Renderer] FixedHeightDynamicWidth: outputSize=800x480 logicalSize=640x480
-...
-[Renderer] FixedHeightDynamicWidth: outputSize=800x600 logicalSize=800x600
-```
-i.e. 800x480 → 640x480 → 800x600. This is not just a log artifact — the
-project owner watched the actual window on screen while `HelloGame` ran and
-confirmed it visibly flickers during this startup sequence ("to okno nabehne
-ale blika").
+1. `GraphicsDeviceManager::GraphicsDeviceManager(Game* game)`
+   (`GraphicsDeviceManager.cpp:59-73`) unconditionally calls `ApplyChanges()`
+   at the end of the constructor.
+2. `GraphicsDeviceManager::ApplyChanges()` (`GraphicsDeviceManager.cpp:196`):
+   since the device isn't null (it's `Game`'s own, obtained via
+   `game_->getGraphicsDeviceProperty()`) but also isn't *owned* by the
+   manager, it takes the "reconfigure existing device" branch and calls
+   `applyToExistingBackend(gdi)` at line 232 — reconfiguration **#1**.
+3. Separately and unconditionally, `Game::DoInitialize()`
+   (`Game.cpp:640-646`) does:
+   ```cpp
+   graphicsDeviceManager_ = Services_.GetService<IGraphicsDeviceManager>();
+   if (graphicsDeviceManager_ != nullptr)
+   {
+       graphicsDeviceManager_->CreateDevice();
+   }
+   ```
+   `GraphicsDeviceManager::CreateDevice()` (`GraphicsDeviceManager.cpp:249`)
+   also ends by calling `applyToExistingBackend(gdi)` (line 299) —
+   reconfiguration **#2**, completely redundant with #1 since nothing
+   meaningful changed in between.
 
-**Workaround in cna-template:** `HelloGame`'s constructor does not call
-`setPreferredBackBufferWidth/HeightProperty()` at all — it uses
-`GraphicsDeviceManager`'s default resolution (matching `examples/demo_2d`'s
-own constructor, which also never touches these properties) and reads the
-actual size back at runtime in `Update()` instead of assuming a fixed one.
-This avoids the resize cascade entirely.
+`applyToExistingBackend()` (`GraphicsDeviceManager.cpp:541`) calls
+`graphicsDevice_->SetPresentationMode(...)` followed by
+`graphicsDevice_->Reset(pp, adapter)` — a real, visible reconfiguration of
+the actual OS window's presentation/viewport/virtual-resolution state, not a
+cheap no-op. So any `Game` subclass that owns a `GraphicsDeviceManager`
+member pays for **two full backend reconfiguration passes** during startup
+instead of one.
 
-**Suggested upstream fix:** `GraphicsDeviceManager`/the SDL_RENDERER backend
-should apply the constructor-set `PreferredBackBufferWidth/Height` once,
-directly, when first creating the window — not create a default-sized window
-and then resize it (possibly more than once) during `Initialize()`. This is
-standard real-XNA behavior (the window is created once, at the requested
-size) and the current CNA behavior is a visible regression from it for any
-consumer that sets a non-default resolution, which is an extremely common
-thing for a game to do.
+**Confirmed by actually building and running, not just reading the
+source**, and specifically by comparing two real programs against each
+other:
+- `HelloGame` (owns a `GraphicsDeviceManager graphics_(this)` member — the
+  standard, XNA-idiomatic pattern, exactly as CNA's own `README.md` §10
+  "Usage Example" recommends) logs `[Renderer] SetPresentationMode:
+  FIXED_HEIGHT_DYNAMIC_WIDTH` **twice** during startup, with a full
+  `applyLogicalPresentation()`/`SDL_SetRenderLogicalPresentation` pair
+  around each occurrence.
+- CNA's own `examples/demo_2d` — rebuilt and run directly from this session
+  for comparison — logs `SetPresentationMode` **zero** times, because
+  `Game1` never constructs a `GraphicsDeviceManager` at all (confirmed by
+  `grep -n GraphicsDeviceManager examples/demo_2d/src/Game1.*` returning no
+  matches). This means `demo_2d` simply never exercises the buggy code path
+  — it isn't evidence the double-reconfiguration is fine, it's evidence that
+  `demo_2d` is not representative of the standard `GraphicsDeviceManager`-owning
+  pattern every real XNA game (and CNA's own README example) uses.
+
+This double reconfiguration is a plausible root cause of a real, visible
+startup flicker the project owner watched happen live while `HelloGame` ran
+("to okno nabehne ale blika" / "stale to blika" — the window flickers /
+still flickers). An earlier hypothesis in this same investigation — that
+setting `PreferredBackBufferWidth/Height` in the constructor caused a
+*different-sized* intermediate resize (800x480 → 640x480 → 800x600) — was a
+real, separate, and separately-fixed symptom (see below), but removing that
+did not fully eliminate the flicker report, which led to this deeper trace.
+
+**Earlier, now-superseded finding (kept for the record):** setting
+`graphics_.setPreferredBackBufferWidthProperty(800)` /
+`setPreferredBackBufferHeightProperty(600)` in the constructor caused one of
+the two `applyToExistingBackend()` passes above to run with different
+preferred-size state than the other, producing a visible resize through an
+intermediate size (`FixedHeightDynamicWidth: outputSize=800x480
+logicalSize=800x480` → `.../640x480` → `.../800x600` in SDL debug logs)
+before settling. Removing the explicit size (using
+`GraphicsDeviceManager`'s default resolution instead, matching `demo_2d`'s
+own constructor) made both reconfiguration passes agree on the same size,
+eliminating the *different-size* flicker — but the *same-size*
+double-reconfiguration described above still happens on every startup
+regardless, since it's unconditional in `Game::DoInitialize()`.
+
+**Not worked around further in cna-template:** removing the
+`GraphicsDeviceManager graphics_` member entirely would dodge this bug, but
+would make `HelloGame` non-idiomatic (every real XNA game has one; it's
+required for `PreferredBackBufferWidth`, `IsFullScreen`,
+`ToggleFullScreen()`, etc., none of which `demo_2d` demonstrates either).
+Per the project owner's explicit direction, this is documented here instead
+of patched around at the application level or fixed directly in `../cna`.
+
+**Suggested upstream fix:** `Game::DoInitialize()` should not
+unconditionally call `graphicsDeviceManager_->CreateDevice()` when a
+`GraphicsDeviceManager` already exists and already applied its initial
+configuration via its own constructor. Either skip `CreateDevice()` when the
+manager's device is already up to date (e.g. track whether `ApplyChanges()`
+already ran once with no preference changes since), or have
+`GraphicsDeviceManager`'s constructor *not* eagerly call `ApplyChanges()`
+and instead let `Game::DoInitialize()`'s `CreateDevice()` call be the single
+source of truth for the first-time setup. Either way, a `Game` with a
+`GraphicsDeviceManager` member should reconfigure the backend exactly once
+during startup, not twice.
 
 ### `CNA_GRAPHICS_BACKEND` cache variable's `STRINGS` property omits `WEBGPU`, and WEBGPU backend target availability is checkout-dependent
 
