@@ -1,5 +1,19 @@
 # NEXT — cna-template session log
 
+## Post-completion addition: missing.md
+
+After the checklist below was finished and pushed, the project owner asked
+for all the upstream problems found in CNA/sharp-runtime/mobile-eggbert
+during this session to be written up in English. Added `missing.md` at the
+repo root (own file, not folded into README, since it documents upstream
+framework issues rather than cna-template usage): the SDL_RENDERER
+`Clear(Color)` crash (and that CNA's own README §10 example uses the
+non-portable overload), the startup resize/flicker bug, the
+`cna_copy_sdl_runtime`/`cna_copy_mingw_runtime` CMake scoping issue,
+sharp-runtime's missing MinGW-cross zlib dependency, the WEBGPU
+checkout-dependent-availability gap, and a small stray-argument issue in
+mobile-eggbert's own `CMakeLists.txt`. Committed and pushed to `develop`.
+
 ## Status: all `plan.md` checklist items complete
 
 Every task in `plan.md` §10 is done. This session built a complete,
