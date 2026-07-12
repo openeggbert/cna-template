@@ -1,0 +1,35 @@
+# Build directories (one per CMake preset / backend)
+build*/
+cmake-build-*/
+out/
+
+# IDEs
+.idea/
+.vs/
+.vscode/
+*.swp
+
+# CMake user-local overrides (never committed, machine-specific)
+CMakeUserPresets.json
+
+# Android — Gradle build artefacts
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+android/app/.cxx/
+
+# Android signing — never commit private keys or passwords
+*.keystore
+*.jks
+key.properties
+
+# Emscripten
+*.wasm
+*.data
+
+# Misc
+.DS_Store
+__pycache__/
+*.pyc
+.claude/*
