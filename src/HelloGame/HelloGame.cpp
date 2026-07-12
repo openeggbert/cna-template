@@ -13,8 +13,12 @@ HelloGame::HelloGame()
       logoTexture_(),
       position_(300.0f, 220.0f)
 {
-    graphics_.setPreferredBackBufferWidthProperty(800);
-    graphics_.setPreferredBackBufferHeightProperty(600);
+    // Deliberately not calling setPreferredBackBufferWidth/HeightProperty()
+    // here: doing so made the window visibly resize (and flicker) two or
+    // three times during startup as CNA created the window at its own
+    // default size and then re-applied ours. Using the manager's default
+    // resolution avoids that entirely; Update() reads the actual size back
+    // at runtime instead of assuming a fixed one.
     Game::getWindowProperty().setTitleProperty("cna-template - HelloGame");
 }
 
@@ -57,7 +61,13 @@ void HelloGame::Draw(const GameTime& gameTime)
     (void)gameTime;
 
     auto& device = getGraphicsDeviceProperty();
-    device.Clear(Color::CornflowerBlue);
+
+    // Use the color-only Clear() overload, not Clear(const Color&): the latter
+    // clears target+depth+stencil together to match real XNA/FNA semantics,
+    // which the 2D-only SDL_RENDERER backend does not support (it has no
+    // depth/stencil buffer and throws). The float overload clears only the
+    // color target and works identically on all 5 backends.
+    device.Clear(100.0f / 255.0f, 149.0f / 255.0f, 237.0f / 255.0f, 1.0f); // cornflower blue
 
     spriteBatch_->Begin();
     spriteBatch_->Draw(logoTexture_, position_, Color::White);
