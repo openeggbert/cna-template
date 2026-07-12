@@ -1,0 +1,88 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "sdl-renderer",
+      "displayName": "Desktop - SDL_Renderer backend",
+      "description": "Most portable backend, 2D-only. Same backend forced on Android/Emscripten.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/cmake-build-sdl-renderer",
+      "cacheVariables": { "CNA_GRAPHICS_BACKEND": "SDL_RENDERER" }
+    },
+    {
+      "name": "easygl",
+      "displayName": "Desktop - EasyGL backend",
+      "description": "Most mature backend, full 2D+3D via OpenGL.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/cmake-build-easygl",
+      "cacheVariables": { "CNA_GRAPHICS_BACKEND": "EASYGL" }
+    },
+    {
+      "name": "bgfx",
+      "displayName": "Desktop - bgfx backend",
+      "description": "Full 2D+3D via bgfx.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/cmake-build-bgfx",
+      "cacheVariables": { "CNA_GRAPHICS_BACKEND": "BGFX" }
+    },
+    {
+      "name": "vulkan",
+      "displayName": "Desktop - Vulkan backend",
+      "description": "Real 3D rendering via Vulkan.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/cmake-build-vulkan",
+      "cacheVariables": { "CNA_GRAPHICS_BACKEND": "VULKAN" }
+    },
+    {
+      "name": "webgpu",
+      "displayName": "Desktop - WebGPU backend (experimental)",
+      "description": "Experimental native wgpu-native backend. Requires a CNA checkout that includes the cna_backend_graphics_webgpu target.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/cmake-build-webgpu",
+      "cacheVariables": { "CNA_GRAPHICS_BACKEND": "WEBGPU" }
+    },
+    {
+      "name": "web",
+      "displayName": "Web (Emscripten)",
+      "description": "Builds HelloGame.html/.js/.wasm. Requires EMSDK active (source emsdk_env.sh) and configuring with: emcmake cmake --preset web",
+      "binaryDir": "${sourceDir}/cmake-build-web",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CNA_GRAPHICS_BACKEND": "SDL_RENDERER"
+      }
+    },
+    {
+      "name": "windows-vs2022",
+      "displayName": "Windows - Visual Studio 17 2022",
+      "description": "Visual Studio's native CMake integration reads this preset directly (File > Open > Folder, or the CMake tool window). Not build-tested on this machine (no Visual Studio/MSBuild available) -- please verify on Windows.",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/cmake-build-vs2022",
+      "cacheVariables": {
+        "CNA_GRAPHICS_BACKEND": "SDL_RENDERER"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "sdl-renderer",   "configurePreset": "sdl-renderer",   "targets": ["HelloGame"] },
+    { "name": "easygl",         "configurePreset": "easygl",         "targets": ["HelloGame"] },
+    { "name": "bgfx",           "configurePreset": "bgfx",           "targets": ["HelloGame"] },
+    { "name": "vulkan",         "configurePreset": "vulkan",         "targets": ["HelloGame"] },
+    { "name": "webgpu",         "configurePreset": "webgpu",         "targets": ["HelloGame"] },
+    { "name": "web",            "configurePreset": "web",            "targets": ["HelloGame"] },
+    { "name": "windows-vs2022", "configurePreset": "windows-vs2022", "targets": ["HelloGame"], "configuration": "Debug" }
+  ]
+}
