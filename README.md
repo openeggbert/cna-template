@@ -361,6 +361,15 @@ best reference for real, working examples of every rule below.
   color-only clear instead of throwing (fixed upstream in `../cna`, see
   `missing.md`). `HelloGame` uses `device.Clear(Color::CornflowerBlue)`
   directly — no workaround needed.
+- **Never call `device.Present()` in your `Draw()` override.** As in real
+  XNA/FNA, the framework presents for you exactly once per frame, in
+  `Game::EndDraw()`. Calling it yourself too makes SDL present twice per
+  frame; SDL treats the backbuffer as invalid after a present, so the second
+  one pushes undefined content to the screen and **the window visibly
+  flickers on every frame**. Note that CNA's own `README.md` §10 "Usage
+  Example" currently *does* call `device.Present()` — that is a bug in that
+  example (see `missing.md`); every real CNA codebase (`demo_2d`, all 86
+  `cna-samples`, `mobile-eggbert`) correctly does not.
 
 ### Assets: CNA never reads `.xnb`
 

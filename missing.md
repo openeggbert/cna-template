@@ -11,6 +11,149 @@ during a Czech-language session.
 
 ## CNA (`../cna`)
 
+### README §10 "Usage Example" tells every new user to call `device.Present()` in `Draw()` — which double-presents and makes the window flicker on every frame
+
+**Status: OPEN upstream (docs bug). Fixed on cna-template's side.** This is
+the actual root cause of the startup/continuous flicker the project owner
+kept reporting ("to okno nabehne ale blika" → "stale to blika" → still
+flickering even after the two *other* flicker-adjacent bugs below were fixed
+upstream). The two earlier fixes were real, but they addressed *startup*
+reconfiguration; this one flickers on **every single frame**, which is why it
+survived them.
+
+**Where:** `cna/README.md` §10 "Usage Example", line 379:
+```cpp
+void Draw(const GameTime& gameTime) override
+{
+    auto& device = getGraphicsDeviceProperty();
+    device.Clear(CornflowerBlue);
+
+    spriteBatch_->Begin();
+    spriteBatch_->Draw(*logo_, 100.0f, 80.0f);
+    spriteBatch_->End();
+
+    device.Present();   // <-- WRONG: the framework already does this
+}
+```
+
+**Problem:** `Game::EndDraw()` (`cna/src/Microsoft/Xna/Framework/Game.cpp:493`)
+already presents exactly once per frame, on **both** of its branches:
+```cpp
+void Game::EndDraw()
+{
+    if (graphicsDeviceManager_ != nullptr)
+        graphicsDeviceManager_->EndDraw();       // -> graphicsDevice_->Present()
+    else
+        getGraphicsDeviceProperty().Present();   // -> Present()
+}
+```
+and `Game::Tick()` (`Game.cpp:446-449`) drives it:
+```cpp
+else if (BeginDraw())
+{
+    Draw(gameTime_);   // the user's Draw() override
+    EndDraw();         // framework presents here
+}
+```
+`GraphicsDevice::Present()` (`GraphicsDevice.cpp:354`) has no
+already-presented guard, so it forwards straight to the backend's
+`SDL_RenderPresent()` every time. A `Game` whose `Draw()` also calls
+`Present()` therefore calls `SDL_RenderPresent()` **twice per frame**. SDL
+explicitly documents the backbuffer as *invalid* after a present ("do not
+assume that previous contents will exist between frames"), so the second
+present pushes undefined content to the screen — the window visibly
+alternates between the correctly-rendered frame and garbage. Continuous,
+every-frame flicker.
+
+**Measured, not theorized.** `SDL_RenderPresent` is a dynamic symbol in the
+built binary, so it can be counted with an `LD_PRELOAD` interposition shim
+that forwards to the real one via `dlsym(RTLD_NEXT, ...)`. Running
+`HelloGame --smoke-test` (which renders exactly 3 frames, then exits):
+
+| `HelloGame --smoke-test` (3 frames) | SDL_RENDERER (`SDL_RenderPresent`) | EASYGL (`SDL_GL_SwapWindow`) |
+|---|---|---|
+| **with** `device.Present()` — i.e. written as CNA's README §10 shows | **6** (2× per frame) | **6** (2× per frame) |
+| **without** it — the fix | **3** (1× per frame) | **3** (1× per frame) |
+
+So the bug is **not backend-specific** — it double-presents on every backend
+(the SDL_RENDERER path goes through `SDL_RenderPresent`, the EASYGL path
+through `SDL_GL_SwapWindow`; both get called twice per frame). Rendering is
+unaffected by the removal (screenshot-verified: cornflower-blue background
+and sprite still drawn correctly) — because the framework was presenting
+anyway.
+
+**CNA's own code already knows this rule and documents it.**
+`cna/examples/headless_smoke_test.cpp:122-124`, in a comment:
+> "No explicit `Present()` here -- `Game::Tick()`/`EndDraw()` already calls
+> `GraphicsDevice::Present()` automatically once `Draw()` returns, matching
+> real XNA/FNA semantics (**a Game's own Draw() override never calls
+> `Present()` itself**)."
+
+And every real consumer in the ecosystem follows that rule — it is only the
+public-facing getting-started example that doesn't:
+
+| Codebase | Calls `Present()` in a `Game::Draw()` override? |
+|---|---|
+| `cna/examples/demo_2d` (CNA's own `Game`-subclass demo) | No |
+| `cna-samples` (86 ported official XNA samples) | No — **0 of 86** |
+| `mobile-eggbert` (real shipping game) | No |
+| **`cna/README.md` §10 "Usage Example"** | **Yes** |
+
+So the one document a newcomer actually copies from is the only place that
+gets it wrong, which is exactly why nobody hit it: the samples and the real
+game don't follow the README. `cna-template`'s `HelloGame` was written
+faithfully from that README example, and inherited the bug.
+
+**Fixed in cna-template:** `HelloGame::Draw()` no longer calls
+`device.Present()` (see `src/HelloGame/HelloGame.cpp`, with a comment
+explaining why), matching `demo_2d`, all 86 samples, mobile-eggbert, real
+XNA/FNA, and CNA's own documented rule.
+
+**Important: CNA's *runtime* is correct and must not be changed.** Verified
+against the authoritative XNA 4.0 reference implementation (FNA, at
+`/rv/data/library/github.com/FNA-XNA/FNA`) — CNA's present path is a
+line-for-line match, `drawBegun` guard included:
+
+```csharp
+// FNA src/Game.cs:599                    // FNA src/GraphicsDeviceManager.cs:574
+protected virtual void EndDraw()          void IGraphicsDeviceManager.EndDraw()
+{                                         {
+    if (graphicsDeviceManager != null)        if (graphicsDevice != null && drawBegun)
+        graphicsDeviceManager.EndDraw();      {
+}                                                 drawBegun = false;
+                                                  graphicsDevice.Present();
+                                              }
+                                          }
+```
+```cpp
+// CNA src/.../Game.cpp:493               // CNA src/.../GraphicsDeviceManager.cpp
+void Game::EndDraw()                      void GraphicsDeviceManager::EndDraw()
+{                                         {
+    if (graphicsDeviceManager_ != nullptr)    if (graphicsDevice_ != nullptr && drawBegun_)
+        graphicsDeviceManager_->EndDraw();    {
+    else                                          drawBegun_ = false;
+        getGraphicsDeviceProperty().Present();    graphicsDevice_->Present();
+}                                             }
+                                          }
+```
+(CNA additionally presents directly when there is no `GraphicsDeviceManager`
+at all — a sensible extension, and how `demo_2d` works.) So CNA behaves
+exactly like XNA 4.0 here: **the framework presents, the game's `Draw()`
+never does.** Real XNA doesn't guard against a user calling `Present()` in
+`Draw()` either, so CNA not guarding is *also* XNA-faithful. There is
+nothing to fix in CNA's code — the entire bug is that one line of README.
+
+**Suggested upstream fix (docs only):** delete the `device.Present();` line
+from `README.md` §10's example, and ideally add a one-line note that the
+framework presents for you — this is the single most-copied snippet in the
+project, and it currently contradicts CNA's own runtime, CNA's own code
+comment in `examples/headless_smoke_test.cpp`, all 86 `cna-samples`,
+`demo_2d`, `mobile-eggbert`, and real XNA/FNA. Optionally (a non-XNA
+nicety, take it or leave it): `GraphicsDevice::Present()` could log a
+warning when called twice within one `Draw()`, so the mistake is
+self-diagnosing instead of surfacing as a mysterious flicker. But the
+one-line docs fix alone removes the trap entirely.
+
 ### `GraphicsDevice::Clear(const Color&)` crashes on the SDL_RENDERER backend
 
 **RESOLVED upstream in `../cna` (develop branch), commit `41b36c67`.**

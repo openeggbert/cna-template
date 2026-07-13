@@ -72,7 +72,12 @@ void HelloGame::Draw(const GameTime& gameTime)
     spriteBatch_->Draw(logoTexture_, position_, Color::White);
     spriteBatch_->End();
 
-    device.Present();
+    // Deliberately no device.Present() here. Game::EndDraw() already presents
+    // exactly once per frame (via GraphicsDeviceManager::EndDraw()), matching
+    // real XNA/FNA, where Game.Draw() never presents. Calling it here too made
+    // SDL_RenderPresent() run twice per frame; SDL treats the backbuffer as
+    // invalid after a present, so the second one pushed undefined content to
+    // the screen and the window visibly flickered on every frame.
 
     if (smokeTest_ && ++drawnFrames_ >= 3) {
         Exit();

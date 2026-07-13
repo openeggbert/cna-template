@@ -62,6 +62,15 @@ cmake/toolchains/       - MinGW-w64 cross-compilation toolchain file
   XNA, but required to compile.
 - Properties are getter/setter pairs (`getFooProperty()`/`setFooProperty()`),
   never raw public fields, matching CNA's own convention.
+- **Never call `GraphicsDevice::Present()` from a `Game::Draw()` override.**
+  `Game::EndDraw()` already presents exactly once per frame (identical to
+  real XNA/FNA — verified line-for-line against FNA's `Game.cs`/
+  `GraphicsDeviceManager.cs`). Calling it yourself as well makes SDL present
+  twice per frame, and since SDL treats the backbuffer as invalid after a
+  present, the second one shows undefined content: the window flickers every
+  frame. Beware: CNA's own `README.md` §10 "Usage Example" *does* call
+  `device.Present()` — that example is wrong (see `missing.md`), and
+  `HelloGame` originally inherited the bug from it.
 - This template must keep working on **all 5 CNA graphics backends**
   (`SDL_RENDERER`, `EASYGL`, `BGFX`, `VULKAN`, `WEBGPU`) and on **all 4
   platforms** (Linux, Windows, Web, Android). Concretely: avoid any XNA API
