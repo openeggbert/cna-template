@@ -9,6 +9,39 @@ see the [CNA project](https://github.com/openeggbert/cna) for details). If
 your CNA checkout lives somewhere else or under a different name, pass
 `-DCNA_ROOT_DIR=/path/to/cna` to CMake.
 
+![HelloGame running on the SDL_RENDERER backend](docs/screenshot.png)
+
+## Quick start
+
+```bash
+cd ..
+git clone https://github.com/openeggbert/cna.git
+git clone https://github.com/openeggbert/sharp-runtime.git
+cd cna-template
+cmake --preset sdl-renderer
+cmake --build --preset sdl-renderer
+./cmake-build-sdl-renderer/HelloGame
+```
+
+That's the fastest path to a running window (arrow keys move the sprite,
+Escape quits). See [Prerequisites](#prerequisites) below for what else you
+need for other backends/platforms.
+
+## Project structure
+
+```
+CMakeLists.txt          root build script: sibling-CNA path, backend selection, per-platform target setup
+CMakePresets.json        one preset per backend, plus a Windows/Visual Studio preset
+cmake/toolchains/        MinGW-w64 cross-compilation toolchain file
+include/HelloGame/       HelloGame.hpp -- delete/replace with your own game
+src/HelloGame/           HelloGame.cpp, Program.cpp (entry point) -- delete/replace with your own game
+Content/                 game assets (PNG/WAV/OGG/etc. -- never .xnb, see the porting guide below)
+android/                 Gradle project; points at this repo's own CMakeLists.txt
+docs/                    README assets (the screenshot above)
+missing.md               upstream CNA/sharp-runtime/mobile-eggbert issues found while building this template
+plan.md, NEXT.md         this template's own development history/planning notes
+```
+
 This template ships:
 
 - **CMake wiring for all 5 CNA graphics backends** (`SDL_RENDERER`, `EASYGL`,
@@ -47,6 +80,16 @@ that process and its own prerequisites.
 
 ## Building (Linux / native Windows / MinGW cross-compile)
 
+| Backend | Platforms | 2D/3D | Status in this repo |
+|---|---|---|---|
+| `SDL_RENDERER` | Linux, Windows, Web, Android (forced on the latter two) | 2D only | Verified — builds and runs HelloGame cleanly on Linux |
+| `EASYGL` | Linux, Windows | 2D + 3D | Verified — builds and runs HelloGame cleanly on Linux (CNA's most mature backend) |
+| `BGFX` | Linux, Windows | 2D + 3D | Not built/run in this environment |
+| `VULKAN` | Linux, Windows | 2D + 3D | Not built/run in this environment |
+| `WEBGPU` | Linux, Windows (experimental) | 2D + 3D | Only available if your `../cna` checkout defines the `cna_backend_graphics_webgpu` target — see note below |
+
+"Verified" means actually built and run (not just compiled) with `SDL_VIDEODRIVER=dummy` / `xvfb-run`, watching for exceptions and correct backend capability logging — see `missing.md` for the bugs that surfaced this way and are now fixed upstream.
+
 Using a CMake preset (see `CMakePresets.json` for the full list —
 `sdl-renderer`, `easygl`, `bgfx`, `vulkan`, `webgpu`):
 
@@ -66,13 +109,12 @@ cmake --build build --target HelloGame
 
 `CNA_GRAPHICS_BACKEND` is one of `SDL_RENDERER`, `EASYGL`, `BGFX`, `VULKAN`,
 `WEBGPU` (equivalently, set exactly one of the `CNA_BACKEND_*` boolean
-options). `SDL_RENDERER` is the most portable (2D-only); `EASYGL` is CNA's
-most mature backend (full 2D+3D). **`WEBGPU` is experimental and only
-available if your `../cna` checkout includes the `cna_backend_graphics_webgpu`
-target** — if it doesn't, the build still succeeds but silently falls back to
-linking `CNA` without a backend-specific static library, which will fail at
-link time with undefined backend symbols. Update your CNA checkout if you hit
-that.
+options). **`WEBGPU` is experimental and only available if your `../cna`
+checkout defines the `cna_backend_graphics_webgpu` target** — if it doesn't,
+CMake's own configure step now fails with a clear, specific error
+("known CNA backend name, but this checkout does not yet define a
+cna_backend_graphics_webgpu target") rather than a confusing generic message
+or a silent link failure. Update your CNA checkout if you hit that.
 
 ### MinGW-w64 cross-compilation from Linux
 
@@ -257,6 +299,16 @@ auto texture = getContentProperty().Load<Texture2D>("logo"); // loads Content/lo
    whatever XNA API you're unsure about — it's a much better reference than
    guessing from the XNA docs alone, since it already has the C++/CNA
    equivalent worked out.
+
+## Known upstream issues
+
+Actually building and running (not just compiling) `HelloGame` against CNA
+surfaced a handful of real bugs and gaps in CNA, sharp-runtime, and
+mobile-eggbert (the structural model this template is based on) — startup
+crashes, a visible startup flicker, a CMake scoping question, a MinGW
+cross-compile dependency gap. See [`missing.md`](missing.md) for the full
+write-up: what was found, how it was confirmed, and which of them are
+already fixed upstream vs. still open.
 
 ## License
 
