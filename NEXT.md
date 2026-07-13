@@ -1,12 +1,72 @@
 # NEXT — cna-template session log
 
-## Status: complete and polished; no forced next task
+## Status: complete and polished, now with CI; no forced next task
 
 Every item in `plan.md` §10 was finished in the initial build-out session,
-and two follow-up rounds have since (a) driven two real upstream CNA bugs to
-resolution and (b) substantially improved `README.md`. The repo is in a
-good, coherent, buildable state on `develop` (not yet merged to `master` —
-see "Branch state" below).
+several follow-up rounds have since driven two real upstream CNA bugs to
+resolution and substantially improved `README.md`, and a separate agent
+("Codex") plus a review/fix pass on top added GitHub Actions CI, a headless
+CTest smoke test, and a real fix for Android asset-symlink fragility on
+Windows. The repo is in a good, coherent, CI-covered, buildable state on
+`develop` (not yet merged to `master` — see "Branch state" below).
+
+## CI + testing (added after the sections below were originally written)
+
+`.github/workflows/ci.yml` (+ `dependencies.lock` pinning sibling-repo
+revisions) now builds Linux (`sdl-renderer`/`easygl` matrix, plus runs the
+`HelloGameSmoke` CTest under `xvfb-run`), Windows (`windows-vs2022` preset,
+build only), Web (Emscripten), and Android (assemble debug APK) on every
+push. `HelloGame` gained a `--smoke-test` mode (3 frames, clean exit) so the
+Linux job can verify it runs without a human watching.
+
+Reviewing Codex's changes and then actually running them (not just reading
+the diff) found and fixed two real bugs before this landed:
+1. The smoke test's CTest registration used CTest's shared `BUILD_TESTING`
+   variable, which meta-gl (pulled in transitively via easy-gl, EASYGL
+   backend only) also uses for its own `option(BUILD_TESTING ... OFF)`
+   default — CMake's `option()` never overwrites an existing cache entry, so
+   whichever one runs first during `add_subdirectory(CNA)` wins. This meant
+   `HelloGameSmoke` silently never got registered for EASYGL. Fixed by *not*
+   using the shared `BUILD_TESTING` name at all: force it (and
+   `EASYGL_BUILD_TESTS`/`EASYGL_BUILD_EXAMPLES`) OFF before
+   `add_subdirectory(CNA)` so vendored dependencies' own test suites can't
+   leak into cna-template's `ctest` run, and register our own test under a
+   dedicated `CNA_TEMPLATE_BUILD_TESTS` option with a direct
+   `enable_testing()` call instead.
+2. The smoke test hardcoded `SDL_VIDEODRIVER=dummy`, which only works for
+   `SDL_RENDERER` — EASYGL (and presumably BGFX/VULKAN) need a real or
+   virtual GL-capable display and throw immediately under the dummy driver.
+   Removed the hardcoded environment from `CMakeLists.txt`; `ci.yml` now
+   installs Xvfb and runs the smoke test under `xvfb-run` uniformly for
+   every backend. Verified: `ctest` passes cleanly (exactly one test) for
+   both `sdl-renderer` (under `SDL_VIDEODRIVER=dummy`) and `easygl` (under
+   `xvfb-run`), via both manual `-D` flags and the actual `cmake --preset`
+   path CI uses.
+
+Also verified (not related to the two bugs above, just general diff review):
+the `android/app/build.gradle` change from a committed symlink
+(`assets/Content` → `../Content`) to a Gradle `Sync` task copying `Content/`
+into a generated assets directory is a real correctness fix, not a style
+preference — committed symlinks check out as plain text files containing
+the link target on Windows clones without `core.symlinks`/Developer Mode
+enabled, silently breaking asset packaging for exactly this template's
+target audience. And a real latent bug in my own earlier `HelloGame::Update()`
+(clamping movement against `GraphicsDeviceManager`'s `PreferredBackBufferWidth/
+Height`, which became stale/decoupled from the actual runtime size once I
+stopped setting it explicitly to fix the startup flicker) was caught and
+fixed by Codex — now clamps against the real `GraphicsDevice::Viewport`.
+
+**Not verified**: Windows/Visual Studio and Android CI jobs (no MSBuild or
+Android SDK/NDK in this environment — same boundary as the rest of this
+project). A Web/Emscripten build was attempted as an extra check and failed,
+but strictly inside `sharp-runtime`'s own `Process.cpp` (`-Werror` on an
+unused parameter under Emscripten/Clang) — unrelated to anything changed in
+this repo; Web built successfully earlier in this same session against the
+same `sharp-runtime` checkout, so this looks like fallout from unrelated
+concurrent work in `../sharp-runtime` (multiple other parallel sessions were
+observed actively building/modifying `../cna` and `../sharp-runtime` during
+this conversation), not a regression here. Worth a quick re-check in a
+future session once that settles.
 
 ## What's in the repo now
 
