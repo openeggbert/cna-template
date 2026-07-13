@@ -1,5 +1,7 @@
 # cna-template
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A starter template for building applications on top of **CNA**, a C++
 reimplementation of the XNA 4.0 game framework programming model, built on
 SDL3 with a pluggable graphics backend layer.
@@ -10,6 +12,37 @@ your CNA checkout lives somewhere else or under a different name, pass
 `-DCNA_ROOT_DIR=/path/to/cna` to CMake.
 
 ![HelloGame running on the SDL_RENDERER backend](docs/screenshot.png)
+
+## Where this fits
+
+- **`cna-template`** (this repo) — start here for a **new** CNA
+  application/game: a minimal, working skeleton with every platform and
+  backend already wired up.
+- **[`cna-samples`](https://github.com/openeggbert/cna-samples)** — dozens
+  of official XNA 4.0 samples already ported to CNA/C++. The best reference
+  for "how do I do X in CNA" when porting an existing game, or for seeing a
+  wider variety of real CNA usage than this template's single minimal
+  example.
+- **[`mobile-eggbert`](https://github.com/openeggbert/mobile-eggbert)** — a
+  complete, real 2D platformer built on CNA, and this template's own
+  structural model. A useful larger, real-world reference once `HelloGame`
+  isn't enough.
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Project structure](#project-structure)
+- [What this template includes](#what-this-template-includes)
+- [Making this your own project](#making-this-your-own-project)
+- [Prerequisites](#prerequisites)
+- [Building](#building)
+- [Windows / Visual Studio](#windows--visual-studio)
+- [Web (Emscripten)](#web-emscripten)
+- [Android](#android)
+- [Porting a C# XNA 4.0 game](#porting-a-c-xna-40-game)
+- [Troubleshooting](#troubleshooting)
+- [Known upstream issues](#known-upstream-issues)
+- [License](#license)
 
 ## Quick start
 
@@ -42,6 +75,8 @@ missing.md               upstream CNA/sharp-runtime/mobile-eggbert issues found 
 plan.md, NEXT.md         this template's own development history/planning notes
 ```
 
+## What this template includes
+
 This template ships:
 
 - **CMake wiring for all 5 CNA graphics backends** (`SDL_RENDERER`, `EASYGL`,
@@ -56,6 +91,34 @@ This template ships:
   Visual Studio](#windows--visual-studio) below).
 - A guide for **porting an existing XNA 4.0 C# game** to this template (see
   [Porting a C# XNA 4.0 game](#porting-a-c-xna-40-game) below).
+
+## Making this your own project
+
+Once `HelloGame` builds and runs, here's what to change to turn this
+template into your own project:
+
+- [ ] Rename `HelloGame`: `include/HelloGame/` → `include/YourGame/`,
+  `src/HelloGame/` → `src/YourGame/`, the class itself
+  (`HelloGame.hpp`/`.cpp`), and `_game_target`'s value in `CMakeLists.txt`
+  (currently hardcoded to `HelloGame`).
+- [ ] Replace `Content/logo.png` with your own assets — see
+  [Assets: CNA never reads .xnb](#assets-cna-never-reads-xnb) for supported
+  formats.
+- [ ] Change the window title (`Game::getWindowProperty().setTitleProperty(...)`
+  in your `Game` subclass's constructor — currently `"cna-template -
+  HelloGame"`).
+- [ ] Rename the CMake project itself: `project(CnaTemplate ...)` at the top
+  of `CMakeLists.txt`.
+- [ ] Android: change `namespace`/`applicationId` in
+  `android/app/build.gradle` (currently `org.openeggbert.cnatemplate`),
+  rename `HelloGameActivity`, update `app_name` in
+  `android/app/src/main/res/values/strings.xml`, and replace the launcher
+  icons under `android/app/src/main/res/mipmap-mdpi/`.
+- [ ] Update `LICENSE` (copyright holder/year) and this `README.md` for your
+  own project.
+- [ ] `plan.md`/`NEXT.md`/`missing.md` are this template's own development
+  history, not part of your game — delete them or keep them for reference,
+  your call.
 
 ## Prerequisites
 
@@ -78,7 +141,11 @@ CNA itself vendors SDL3/SDL3_image/SDL3_mixer and builds them from source on
 first configure (cached afterwards) — see `../cna/README.md` for details on
 that process and its own prerequisites.
 
-## Building (Linux / native Windows / MinGW cross-compile)
+## Building
+
+Covers Linux, native Windows, and MinGW cross-compilation from Linux — see
+[Web (Emscripten)](#web-emscripten) and [Android](#android) below for those
+two platforms instead.
 
 | Backend | Platforms | 2D/3D | Status in this repo |
 |---|---|---|---|
@@ -299,6 +366,31 @@ auto texture = getContentProperty().Load<Texture2D>("logo"); // loads Content/lo
    whatever XNA API you're unsure about — it's a much better reference than
    guessing from the XNA docs alone, since it already has the C++/CNA
    equivalent worked out.
+
+## Troubleshooting
+
+- **"CNA framework not found at ..."** — CNA is a sibling repository, not a
+  submodule of this one; clone it next to `cna-template` (see
+  [Prerequisites](#prerequisites)) or pass `-DCNA_ROOT_DIR=/path/to/cna`.
+- **"Missing sibling repository 'sharp-runtime'"** — same idea, from CNA's
+  own `CMakeLists.txt`; clone `sharp-runtime` next to `cna`.
+- **Undefined backend symbols at link time when using `WEBGPU`** — your
+  `../cna` checkout doesn't define the `cna_backend_graphics_webgpu` target
+  yet. CMake's configure step now fails early with a specific message for
+  this (see the `WEBGPU` note in [Building](#building)) rather than letting
+  it reach the linker — if you still hit a link-time failure instead,
+  something is stale; re-run `cmake` from a clean build directory.
+- **Crash or visible flicker on startup** — if you're on an older `../cna`
+  checkout, you may be hitting one of the two startup bugs described in
+  [`missing.md`](missing.md) (both fixed upstream — update your checkout).
+- **MinGW cross-compile fails inside `sharp-runtime/CMakeLists.txt` on
+  `find_package(ZLIB)`** — a known, still-open upstream gap (no MinGW-target
+  zlib vendored by sharp-runtime); see `missing.md` for details. Native
+  Windows (MSVC) builds are unaffected.
+- **Gradle sync fails on Android** — check that the NDK version installed in
+  Android Studio matches `ndkVersion` in `android/app/build.gradle`, and
+  that submodules under `../cna/third_party/` are initialized (see
+  `../cna/README.md`).
 
 ## Known upstream issues
 
