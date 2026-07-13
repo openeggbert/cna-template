@@ -104,6 +104,35 @@ gets it wrong, which is exactly why nobody hit it: the samples and the real
 game don't follow the README. `cna-template`'s `HelloGame` was written
 faithfully from that README example, and inherited the bug.
 
+**The README's pattern is not XNA — it does not exist in real XNA code.**
+Checked against the original Microsoft XNA Game Studio sample corpus
+(`/rv/tmp/XNAGameStudio`) and the MonoGame samples (`/rv/tmp/MonoGame.Samples`):
+
+| Corpus | `.cs` files | calling `GraphicsDevice.Present()` **inside a `Game.Draw()` override** |
+|---|---|---|
+| Official Microsoft XNA 4.0 samples | 2489 | **0** |
+| MonoGame samples | 506 | **0** |
+
+The entire XNA corpus contains only **two** `GraphicsDevice.Present()` calls
+at all, and both are the *opposite* case — code that has deliberately taken
+over rendering while the framework's own loop is **not running**, so nothing
+else is presenting:
+- `NetworkStateManagement/Screens/LoadingScreen.cs` —
+  `DrawLoadAnimation()`, whose own doc comment reads "Calls directly into our
+  Draw method **from the background worker thread**, so as to update the load
+  animation in parallel with the actual loading": a worker thread doing
+  `Clear()` → `Draw()` → `Present()` itself while the main loop is blocked
+  loading.
+- `XNA-4-Racing-Game-Kit/Helpers/FileHelper.cs` — inside a blocking
+  `StorageDevice.BeginShowSelector()` / `Guide.IsVisible` wait on Xbox 360,
+  manually pumping `Clear()` + `Present()` so the screen stays alive while
+  the game loop is stalled.
+
+Both are the well-known "I've taken over the loop, so I must present myself"
+pattern — which is exactly when calling `Present()` *is* correct, and it is
+categorically different from calling it inside `Game.Draw()` while the
+framework is about to present too.
+
 **Fixed in cna-template:** `HelloGame::Draw()` no longer calls
 `device.Present()` (see `src/HelloGame/HelloGame.cpp`, with a comment
 explaining why), matching `demo_2d`, all 86 samples, mobile-eggbert, real
