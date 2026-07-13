@@ -50,6 +50,22 @@
       "cacheVariables": { "CNA_GRAPHICS_BACKEND": "WEBGPU" }
     },
     {
+      "name": "headless",
+      "displayName": "Headless backend (no GPU, no window)",
+      "description": "No GPU or window at all. Useful for CI and tests.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/cmake-build-headless",
+      "cacheVariables": { "CNA_GRAPHICS_BACKEND": "HEADLESS" }
+    },
+    {
+      "name": "software",
+      "displayName": "Software backend (CPU rasterizer)",
+      "description": "CPU rasterizer; no GPU required.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/cmake-build-software",
+      "cacheVariables": { "CNA_GRAPHICS_BACKEND": "SOFTWARE" }
+    },
+    {
       "name": "web",
       "displayName": "Web (Emscripten)",
       "description": "Builds HelloGame.html/.js/.wasm. Requires EMSDK active (source emsdk_env.sh) and configuring with: emcmake cmake --preset web",
@@ -82,6 +98,8 @@
     { "name": "bgfx",           "configurePreset": "bgfx",           "targets": ["HelloGame"] },
     { "name": "vulkan",         "configurePreset": "vulkan",         "targets": ["HelloGame"] },
     { "name": "webgpu",         "configurePreset": "webgpu",         "targets": ["HelloGame"] },
+    { "name": "headless",       "configurePreset": "headless",       "targets": ["HelloGame"] },
+    { "name": "software",       "configurePreset": "software",       "targets": ["HelloGame"] },
     { "name": "web",            "configurePreset": "web",            "targets": ["HelloGame"] },
     { "name": "windows-vs2022", "configurePreset": "windows-vs2022", "targets": ["HelloGame"], "configuration": "Debug" }
   ]

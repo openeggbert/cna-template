@@ -81,8 +81,9 @@ plan.md, NEXT.md         this template's own development history/planning notes
 
 This template ships:
 
-- **CMake wiring for all 5 CNA graphics backends** (`SDL_RENDERER`, `EASYGL`,
-  `BGFX`, `VULKAN`, `WEBGPU`), selected with one validated CMake option.
+- **CMake wiring for all 7 CNA graphics backends** (`SDL_RENDERER`, `EASYGL`,
+  `BGFX`, `VULKAN`, `WEBGPU`, `HEADLESS`, `SOFTWARE`), selected with one
+  validated CMake option.
 - **`HelloGame`**, a minimal interactive example (`include/HelloGame/`,
   `src/HelloGame/`) — loads a texture, draws it, and moves it with the arrow
   keys. Delete/replace it with your own game; that's the point of a
@@ -161,12 +162,14 @@ two platforms instead.
 | `EASYGL` | Linux, Windows | 2D + 3D | Verified — builds and runs HelloGame cleanly on Linux (CNA's most mature backend) |
 | `BGFX` | Linux, Windows | 2D + 3D | Not built/run in this environment |
 | `VULKAN` | Linux, Windows | 2D + 3D | Not built/run in this environment |
-| `WEBGPU` | Linux, Windows (experimental) | 2D + 3D | Only available if your `../cna` checkout defines the `cna_backend_graphics_webgpu` target — see note below |
+| `WEBGPU` | Linux, Windows (experimental) | 2D + 3D | Configure-checked only — needs a CNA checkout that defines `cna_backend_graphics_webgpu` |
+| `HEADLESS` | any | no GPU/window at all | Configure-verified. Useful for CI and tests |
+| `SOFTWARE` | any | CPU rasterizer | Configure-verified |
 
 "Verified" means actually built and run (not just compiled) with `SDL_VIDEODRIVER=dummy` / `xvfb-run`, watching for exceptions and correct backend capability logging — see `missing.md` for the bugs that surfaced this way and are now fixed upstream.
 
 Using a CMake preset (see `CMakePresets.json` for the full list —
-`sdl-renderer`, `easygl`, `bgfx`, `vulkan`, `webgpu`):
+`sdl-renderer`, `easygl`, `bgfx`, `vulkan`, `webgpu`, `headless`, `software`):
 
 ```bash
 cmake --preset easygl
@@ -182,15 +185,21 @@ cmake --build build --target HelloGame
 ./build/HelloGame
 ```
 
-`CNA_GRAPHICS_BACKEND` is the only backend-selection option. Its allowed
-values are `SDL_RENDERER`, `EASYGL`, `BGFX`, `VULKAN`, and `WEBGPU`; an
-unknown value now fails configuration instead of silently selecting another
-backend. **`WEBGPU` is experimental and only available if your `../cna`
-checkout defines the `cna_backend_graphics_webgpu` target** — if it doesn't,
-CMake's own configure step now fails with a clear, specific error
-("known CNA backend name, but this checkout does not yet define a
-cna_backend_graphics_webgpu target") rather than a confusing generic message
-or a silent link failure. Update your CNA checkout if you hit that.
+`CNA_GRAPHICS_BACKEND` is the **only** thing you set — it's a single string,
+and CNA keys everything else off it. Allowed values: `SDL_RENDERER`,
+`EASYGL`, `BGFX`, `VULKAN`, `WEBGPU`, `HEADLESS`, `SOFTWARE`. An unknown value
+fails configuration with a clear error rather than silently falling back to
+another backend.
+
+(CNA also exposes `CNA_BACKEND_*` boolean options. You do not need them, and
+this template deliberately never sets them: they're an alternative input path
+that all default to OFF, and CNA only consults them if you explicitly switch
+one ON. Setting the string is enough.)
+
+If your `../cna` checkout is too old to define the backend you asked for —
+`WEBGPU` is the likely one, being newer — configure fails immediately with a
+specific message naming the missing target, rather than a confusing link
+error much later.
 
 ### Tests
 
@@ -418,14 +427,12 @@ auto texture = getContentProperty().Load<Texture2D>("logo"); // loads Content/lo
 - **"Missing sibling repository 'sharp-runtime'"** — same idea, from CNA's
   own `CMakeLists.txt`; clone `sharp-runtime` next to `cna`.
 - **"unknown CNA_GRAPHICS_BACKEND"** — pass one of `SDL_RENDERER`, `EASYGL`,
-  `BGFX`, `VULKAN`, or `WEBGPU`. Backend boolean flags are CNA internals and
-  are intentionally not a supported template interface.
-- **Undefined backend symbols at link time when using `WEBGPU`** — your
-  `../cna` checkout doesn't define the `cna_backend_graphics_webgpu` target
-  yet. CMake's configure step now fails early with a specific message for
-  this (see the `WEBGPU` note in [Building](#building)) rather than letting
-  it reach the linker — if you still hit a link-time failure instead,
-  something is stale; re-run `cmake` from a clean build directory.
+  `BGFX`, `VULKAN`, `WEBGPU`, `HEADLESS`, `SOFTWARE`. Don't reach for the
+  `CNA_BACKEND_*` booleans — the single string is the whole interface (see
+  [Building](#building)).
+- **"this CNA checkout does not define target `cna_backend_graphics_...`"** —
+  your `../cna` is older than the backend you asked for (most likely
+  `WEBGPU`). Update the CNA checkout, or pick another backend.
 - **Crash or visible flicker on startup** — if you're on an older `../cna`
   checkout, you may be hitting one of the two startup bugs described in
   [`missing.md`](missing.md) (both fixed upstream — update your checkout).

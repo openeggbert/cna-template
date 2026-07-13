@@ -29,66 +29,37 @@ if(NOT EXISTS "${CNA_ROOT_DIR}/CMakeLists.txt")
 endif()
 
 # -----------------------------------------------------------------------------
-# Graphics backend selection for CNA.
-# CNA_GRAPHICS_BACKEND is the single public selection interface. The boolean
-# CNA_BACKEND_* cache entries below are implementation details required by CNA.
-# Available backends: SDL_RENDERER, EASYGL, BGFX, VULKAN, WEBGPU
+# Graphics backend selection.
 # -----------------------------------------------------------------------------
+# `CNA_GRAPHICS_BACKEND` is the only thing that needs setting. CNA's own
+# CMakeLists.txt keys every downstream decision (which backend sources to
+# compile, which target to create, which sibling deps to pull in) off this one
+# string.
+#
+# CNA also exposes a parallel set of CNA_BACKEND_* boolean options, but those
+# are an *optional, alternative* input path: they all default to OFF, and CNA
+# only consults them if you explicitly switch one ON -- in which case it
+# derives CNA_GRAPHICS_BACKEND from the boolean instead. So a consumer that
+# just sets the string never has to touch them, and this file deliberately
+# doesn't. (It used to force all of them, ~60 lines of if/elseif copied
+# uncritically from mobile-eggbert; that was pure redundancy, and it also
+# silently locked out the backends CNA has added since.)
+set(CNA_TEMPLATE_BACKENDS SDL_RENDERER EASYGL BGFX VULKAN WEBGPU HEADLESS SOFTWARE)
+
 if(EMSCRIPTEN OR ANDROID)
-    # On Emscripten/Android only SDL_RENDERER is supported (no desktop GL context
-    # the same way; SDL_RENDERER runs on WebGL/GLES under the hood).
-    set(CNA_BACKEND_SDL_RENDERER ON  CACHE BOOL "Enable SDL_Renderer backend in CNA" FORCE)
-    set(CNA_BACKEND_EASY_GL      OFF CACHE BOOL "Enable easy-gl backend in CNA"      FORCE)
-    set(CNA_BACKEND_BGFX         OFF CACHE BOOL "Enable bgfx backend in CNA"         FORCE)
-    set(CNA_BACKEND_VULKAN       OFF CACHE BOOL "Enable Vulkan backend in CNA"       FORCE)
-    set(CNA_BACKEND_WEBGPU       OFF CACHE BOOL "Enable WebGPU backend in CNA"       FORCE)
-    set(CNA_GRAPHICS_BACKEND "SDL_RENDERER" CACHE STRING "Selected CNA backend (SDL_RENDERER, EASYGL, BGFX, VULKAN, WEBGPU)" FORCE)
+    # Only SDL_RENDERER is supported on these two platforms (no desktop GL
+    # context the same way; SDL_RENDERER runs on WebGL/GLES under the hood).
+    # FORCE is required: CNA's own default for Emscripten is EASYGL.
+    set(CNA_GRAPHICS_BACKEND "SDL_RENDERER" CACHE STRING "CNA graphics backend" FORCE)
 else()
-    # Desktop: choose one backend. WEBGPU is experimental and requires a CNA
-    # checkout that exposes cna_backend_graphics_webgpu.
-    set(CNA_GRAPHICS_BACKEND "SDL_RENDERER" CACHE STRING "Selected CNA backend (SDL_RENDERER, EASYGL, BGFX, VULKAN, WEBGPU)")
-    set_property(CACHE CNA_GRAPHICS_BACKEND PROPERTY STRINGS SDL_RENDERER EASYGL BGFX VULKAN WEBGPU)
+    set(CNA_GRAPHICS_BACKEND "SDL_RENDERER" CACHE STRING "CNA graphics backend")
+endif()
+set_property(CACHE CNA_GRAPHICS_BACKEND PROPERTY STRINGS ${CNA_TEMPLATE_BACKENDS})
 
-    set(_cna_template_backends SDL_RENDERER EASYGL BGFX VULKAN WEBGPU)
-    list(FIND _cna_template_backends "${CNA_GRAPHICS_BACKEND}" _cna_template_backend_index)
-    if(_cna_template_backend_index EQUAL -1)
-        message(FATAL_ERROR
-            "cna-template: unknown CNA_GRAPHICS_BACKEND='${CNA_GRAPHICS_BACKEND}'. "
-            "Choose one of: ${_cna_template_backends}.")
-    endif()
-
-    if(CNA_GRAPHICS_BACKEND STREQUAL "SDL_RENDERER")
-        set(CNA_BACKEND_SDL_RENDERER ON  CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_EASY_GL      OFF CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_BGFX         OFF CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_VULKAN       OFF CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_WEBGPU       OFF CACHE BOOL "" FORCE)
-    elseif(CNA_GRAPHICS_BACKEND STREQUAL "EASYGL")
-        set(CNA_BACKEND_SDL_RENDERER OFF CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_EASY_GL      ON  CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_BGFX         OFF CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_VULKAN       OFF CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_WEBGPU       OFF CACHE BOOL "" FORCE)
-    elseif(CNA_GRAPHICS_BACKEND STREQUAL "BGFX")
-        set(CNA_BACKEND_SDL_RENDERER OFF CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_EASY_GL      OFF CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_BGFX         ON  CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_VULKAN       OFF CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_WEBGPU       OFF CACHE BOOL "" FORCE)
-    elseif(CNA_GRAPHICS_BACKEND STREQUAL "VULKAN")
-        set(CNA_BACKEND_SDL_RENDERER OFF CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_EASY_GL      OFF CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_BGFX         OFF CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_VULKAN       ON  CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_WEBGPU       OFF CACHE BOOL "" FORCE)
-    elseif(CNA_GRAPHICS_BACKEND STREQUAL "WEBGPU")
-        set(CNA_BACKEND_SDL_RENDERER OFF CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_EASY_GL      OFF CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_BGFX         OFF CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_VULKAN       OFF CACHE BOOL "" FORCE)
-        set(CNA_BACKEND_WEBGPU       ON  CACHE BOOL "" FORCE)
-    endif()
-
+if(NOT CNA_GRAPHICS_BACKEND IN_LIST CNA_TEMPLATE_BACKENDS)
+    message(FATAL_ERROR
+        "cna-template: unknown CNA_GRAPHICS_BACKEND='${CNA_GRAPHICS_BACKEND}'. "
+        "Choose one of: ${CNA_TEMPLATE_BACKENDS}.")
 endif()
 
 # Keep CNA's own configure/build footprint small: this template doesn't need
@@ -147,18 +118,10 @@ find_package(SDL3_mixer REQUIRED CONFIG)
 # without depending on link order.
 # Note: --start-group/--end-group are not available on Emscripten's linker or
 # on Android (lld does not need it and warns).
-set(_cna_backend_target "")
-if(CNA_GRAPHICS_BACKEND STREQUAL "SDL_RENDERER")
-    set(_cna_backend_target cna_backend_graphics_sdl_renderer)
-elseif(CNA_GRAPHICS_BACKEND STREQUAL "EASYGL")
-    set(_cna_backend_target cna_backend_graphics_easygl)
-elseif(CNA_GRAPHICS_BACKEND STREQUAL "BGFX")
-    set(_cna_backend_target cna_backend_graphics_bgfx)
-elseif(CNA_GRAPHICS_BACKEND STREQUAL "VULKAN")
-    set(_cna_backend_target cna_backend_graphics_vulkan)
-elseif(CNA_GRAPHICS_BACKEND STREQUAL "WEBGPU")
-    set(_cna_backend_target cna_backend_graphics_webgpu)
-endif()
+# CNA names its backend targets cna_backend_graphics_<backend, lowercased>,
+# for every backend it has -- so the whole mapping is one string(TOLOWER).
+string(TOLOWER "${CNA_GRAPHICS_BACKEND}" _cna_backend_lower)
+set(_cna_backend_target "cna_backend_graphics_${_cna_backend_lower}")
 
 if(NOT TARGET ${_cna_backend_target})
     message(FATAL_ERROR

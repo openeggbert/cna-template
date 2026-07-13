@@ -71,8 +71,9 @@ cmake/toolchains/       - MinGW-w64 cross-compilation toolchain file
   frame. Beware: CNA's own `README.md` §10 "Usage Example" *does* call
   `device.Present()` — that example is wrong (see `missing.md`), and
   `HelloGame` originally inherited the bug from it.
-- This template must keep working on **all 5 CNA graphics backends**
-  (`SDL_RENDERER`, `EASYGL`, `BGFX`, `VULKAN`, `WEBGPU`) and on **all 4
+- This template must keep working on **all 7 CNA graphics backends**
+  (`SDL_RENDERER`, `EASYGL`, `BGFX`, `VULKAN`, `WEBGPU`, `HEADLESS`,
+  `SOFTWARE`) and on **all 4
   platforms** (Linux, Windows, Web, Android). Concretely: avoid any XNA API
   usage that only works on 3D-capable backends unless you have a reason
   HelloGame specifically needs it. When touching graphics code here, prefer
@@ -83,8 +84,15 @@ cmake/toolchains/       - MinGW-w64 cross-compilation toolchain file
   was originally found (by actually building and running, not by reading
   the header), and it's now fixed upstream in `../cna` (see `missing.md`),
   so `Clear(const Color&)` is safe on all 5 backends again.
-- Select a backend only through `CNA_GRAPHICS_BACKEND`; do not expose or
-  document the forwarded `CNA_BACKEND_*` implementation switches.
+- Select a backend only through `CNA_GRAPHICS_BACKEND` — a single string, and
+  the entire interface. Do **not** set CNA's `CNA_BACKEND_*` booleans: they
+  are an alternative input path that defaults to all-OFF, and CNA only
+  consults them if one is explicitly switched ON (it then derives
+  `CNA_GRAPHICS_BACKEND` from it). This file used to force all of them, ~60
+  lines of if/elseif copied from mobile-eggbert — pure redundancy, which also
+  silently locked out backends CNA added later. Backend target names are just
+  `cna_backend_graphics_<backend lowercased>`, so the mapping is one
+  `string(TOLOWER ...)`; don't reintroduce a per-backend if/elseif chain.
 - Keep the `HelloGameSmoke` CTest passing on native builds. It is the
   template's minimal asset-loading and render-loop regression check.
 - Do not add features or abstractions beyond what's requested. This is a
