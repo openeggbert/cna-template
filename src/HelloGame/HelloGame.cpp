@@ -62,12 +62,7 @@ void HelloGame::Draw(const GameTime& gameTime)
 
     auto& device = getGraphicsDeviceProperty();
 
-    // Use the color-only Clear() overload, not Clear(const Color&): the latter
-    // clears target+depth+stencil together to match real XNA/FNA semantics,
-    // which the 2D-only SDL_RENDERER backend does not support (it has no
-    // depth/stencil buffer and throws). The float overload clears only the
-    // color target and works identically on all 5 backends.
-    device.Clear(100.0f / 255.0f, 149.0f / 255.0f, 237.0f / 255.0f, 1.0f); // cornflower blue
+    device.Clear(Color::CornflowerBlue);
 
     spriteBatch_->Begin();
     spriteBatch_->Draw(logoTexture_, position_, Color::White);

@@ -211,15 +211,13 @@ best reference for real, working examples of every rule below.
 - **Common type mappings**: `List<T>` → `std::vector<T>`, `string` →
   `std::string`, `foreach` → range-`for`, nullable → `std::optional`,
   `TimeSpan` → `System::TimeSpan` (from sharp-runtime).
-- **`GraphicsDevice::Clear(const Color&)` is not portable to `SDL_RENDERER`.**
-  This bit `HelloGame` itself during development: the single-`Color`
-  overload clears target+depth+stencil together to match real XNA/FNA
-  semantics, but the 2D-only `SDL_RENDERER` backend has no depth/stencil
-  buffer and throws `std::runtime_error`. If your game needs to run on
-  `SDL_RENDERER` (mandatory on Android/Web), use the
-  `Clear(float r, float g, float b, float a)` overload instead — it only
-  clears the color target and works identically on all 5 backends. See
-  `src/HelloGame/HelloGame.cpp` for the exact pattern.
+- **`GraphicsDevice::Clear(const Color&)` is safe on every backend, including
+  `SDL_RENDERER`.** The single-`Color` overload clears target+depth+stencil
+  together to match real XNA/FNA semantics; on the 2D-only `SDL_RENDERER`
+  backend (no depth/stencil buffer at all), CNA now degrades this to a
+  color-only clear instead of throwing (fixed upstream in `../cna`, see
+  `missing.md`). `HelloGame` uses `device.Clear(Color::CornflowerBlue)`
+  directly — no workaround needed.
 
 ### Assets: CNA never reads `.xnb`
 

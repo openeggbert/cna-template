@@ -13,6 +13,19 @@ during a Czech-language session.
 
 ### `GraphicsDevice::Clear(const Color&)` crashes on the SDL_RENDERER backend
 
+**RESOLVED upstream in `../cna` (develop branch), commit `41b36c67`.**
+`IGraphicsBackend::SupportsDepthStencil()` (default `true`, overridden
+`false` on `SdlGraphicsBackend`) is now used by
+`GraphicsDevice::Clear(ClearOptions, ...)` to mask `DepthBuffer`/`Stencil`
+out of the request when the active target has no real depth/stencil
+buffer, degrading to a color-only clear instead of forwarding to
+`ClearColorDepthAndStencil()` (matches FNA's own
+`dsFormat == DepthFormat.None` masking behavior). Verified end-to-end
+against this exact repro: `HelloGame` now uses `device.Clear(Color::
+CornflowerBlue)` directly (see `src/HelloGame/HelloGame.cpp`) and runs
+cleanly under `SDL_VIDEODRIVER=dummy` with no crash. The rest of this
+entry is kept for historical context.
+
 **Where:** `cna/src/Microsoft/Xna/Framework/Graphics/GraphicsDevice.cpp`,
 `Clear(const Color& color)` (single-argument overload).
 

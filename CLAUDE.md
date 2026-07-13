@@ -66,14 +66,14 @@ cmake/toolchains/       - MinGW-w64 cross-compilation toolchain file
   (`SDL_RENDERER`, `EASYGL`, `BGFX`, `VULKAN`, `WEBGPU`) and on **all 4
   platforms** (Linux, Windows, Web, Android). Concretely: avoid any XNA API
   usage that only works on 3D-capable backends unless you have a reason
-  HelloGame specifically needs it — e.g. use `GraphicsDevice::Clear(r,g,b,a)`
-  rather than `Clear(const Color&)`, since the latter requires depth/stencil
-  clear support that the 2D-only `SDL_RENDERER` backend (mandatory on
-  Android/Web) does not have and throws on. This was found by actually
-  building and running HelloGame against SDL_RENDERER, not by reading the
-  header — when touching graphics code here, prefer testing against
-  `SDL_RENDERER` specifically, since it's the most restrictive backend and
-  the one every platform must support.
+  HelloGame specifically needs it. When touching graphics code here, prefer
+  testing against `SDL_RENDERER` specifically, since it's the most
+  restrictive backend (2D-only, no depth/stencil, no VertexBuffer/
+  IndexBuffer/OcclusionQuery) and the one every platform must support —
+  this was how HelloGame's `Clear(const Color&)` crash on `SDL_RENDERER`
+  was originally found (by actually building and running, not by reading
+  the header), and it's now fixed upstream in `../cna` (see `missing.md`),
+  so `Clear(const Color&)` is safe on all 5 backends again.
 - Do not add features or abstractions beyond what's requested. This is a
   template — keep `HelloGame` genuinely minimal so it stays easy to delete
   and replace.
