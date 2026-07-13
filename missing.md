@@ -72,6 +72,16 @@ at `Clear(r,g,b,a)` as the 2D-safe alternative.
 
 ### `Game` startup visibly flickers for any `Game` that owns a `GraphicsDeviceManager` — the backend gets fully reconfigured twice
 
+**RESOLVED upstream in `../cna` (develop branch), commit `e4b24168`.**
+`GraphicsDeviceManager(Game*)`'s constructor no longer calls
+`ApplyChanges()` — `Game::DoInitialize()`'s own `CreateDevice()` call,
+moments later, is now the single source of truth for first-time setup,
+matching FNA's own explicit guidance on this exact anti-pattern (see the
+fix's own commit message). Verified: `HelloGame` under
+`SDL_VIDEODRIVER=dummy` now logs `SetPresentationMode:
+FIXED_HEIGHT_DYNAMIC_WIDTH` exactly once during startup instead of
+twice. The rest of this entry is kept for historical context.
+
 **Where:** `cna/src/Microsoft/Xna/Framework/GraphicsDeviceManager.cpp` and
 `cna/src/Microsoft/Xna/Framework/Game.cpp`, specifically the interaction
 between these three call sites:
@@ -169,6 +179,22 @@ during startup, not twice.
 
 ### `CNA_GRAPHICS_BACKEND` cache variable's `STRINGS` property omits `WEBGPU`, and WEBGPU backend target availability is checkout-dependent
 
+**PARTIALLY ADDRESSED upstream in `../cna` (develop branch), commit `e4b24168`.**
+Directly testing `-DCNA_GRAPHICS_BACKEND=WEBGPU` against current
+`develop` shows CMake configure already stops with a clear
+`message(FATAL_ERROR ...)` — this was not actually a silent fallthrough
+on this checkout (the "downstream linking fails with undefined-target
+errors instead of a clear message" framing below turned out not to
+reproduce for CNA's own configure step, only a theoretical concern about
+*other* downstream projects' own separate logic potentially getting out
+of sync with CNA's own selected backend). The message is now WEBGPU-
+specific and actionable ("known backend name, but not defined by this
+checkout... check out a revision where WEBGPU support has merged").
+`STRINGS` deliberately still omits `WEBGPU`, since this checkout
+genuinely doesn't implement it yet (correctly reflecting checkout
+capability, not a bug) — add it back once WEBGPU support actually merges
+into `develop`. The rest of this entry is kept for historical context.
+
 **Where:** `cna/CMakeLists.txt` line ~75:
 `set_property(CACHE CNA_GRAPHICS_BACKEND PROPERTY STRINGS "SDL_RENDERER" "EASYGL" "BGFX" "VULKAN")`
 — no `"WEBGPU"`. Also, the `../cna` checkout used for this session's testing
@@ -201,6 +227,30 @@ is requested but `cna_backend_graphics_webgpu` isn't actually defined by
 that checkout.
 
 ### `cna_copy_sdl_runtime()` / `cna_copy_mingw_runtime()` are not usable by downstream consumers (CMake scoping)
+
+**CORRECTED — this claim does not actually hold, verified empirically.**
+The theoretical CMake-scoping argument below (child-scope `function()`
+definitions not visible in the parent after `add_subdirectory()`) is
+true for *variables*, but not for `function()`/`macro()` *definitions*:
+once CMake processes a `function()` command anywhere during a run
+(including deep inside a nested `add_subdirectory()`), that function
+becomes callable for the rest of the configure, including back up in
+ancestor directories — this was never actually verified against real
+CMake behavior when this entry was first written (see the original
+"has apparently never actually executed" note below). Verified directly
+against the real `../cna` repo: a throwaway consumer project that does
+only `add_subdirectory(${CNA_ROOT_DIR} CNA)` (nothing else — no extra
+`include()`) can call `cna_copy_sdl_runtime(sometarget)` immediately
+afterward without any "Unknown CMake command" error. mobile-eggbert's
+own `CMakeLists.txt` already calls `add_subdirectory` before its
+`if(WIN32)` block that calls `cna_copy_sdl_runtime()`/
+`cna_copy_mingw_runtime()`, so the call ordering is already correct too
+— there is no actual bug here for either CNA or mobile-eggbert to fix.
+No upstream change made. The rest of this entry (the original,
+un-verified reasoning) is kept for historical context, since it's a
+useful reminder to verify CMake-scoping claims empirically rather than
+by pure reasoning — even this project's own earlier "theoretical, never
+actually executed" analysis turned out to be wrong.
 
 **Where:** `cna/cmake/ThirdPartySDL.cmake`, `function(cna_copy_sdl_runtime
 target_name)` / `function(cna_copy_mingw_runtime target_name)`, pulled in via
