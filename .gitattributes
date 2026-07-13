@@ -1,0 +1,20 @@
+# Normalize line endings to LF for all text files by default, regardless of
+# what line endings a contributor's editor/OS uses on checkout.
+* text=auto eol=lf
+
+# Windows-only scripts must keep CRLF -- cmd.exe's batch interpreter can
+# misbehave on LF-only batch files.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Explicit binary declarations (avoids any risk of line-ending or diff
+# mangling regardless of git's own auto-detection).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.jar binary
+*.wasm binary
+*.data binary
+*.keystore binary
+*.jks binary
