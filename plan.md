@@ -185,33 +185,57 @@ project.
 
 ## 10. Task checklist
 
+**Status note (added after the fact): every item below is done.** This
+checklist was written before implementation started and was never synced
+back to reflect completed work as the build-out actually happened — progress
+was tracked via the session's internal task list and via `NEXT.md` instead,
+and this file's checkboxes were simply never updated. Not a case of
+unfinished work; a case of stale planning documentation. Fixed now (see two
+noted deviations from the original plan below, both deliberate scope
+decisions rather than oversights).
+
 - [x] Research CNA, mobile-eggbert, cna-samples structure and APIs.
 - [x] Decide license (MIT), Visual Studio deliverable format (CMake
       integration files), Android application ID
       (`org.openeggbert.cnatemplate`) with the project owner.
 - [x] Write this plan.md.
-- [ ] Initial commit on `master`: `.gitignore`, `README.md` stub. Push. Create
+- [x] Initial commit on `master`: `.gitignore`, `README.md` stub. Push. Create
       `develop` branch.
-- [ ] Root `CMakeLists.txt`: `CNA_ROOT_DIR` sibling path, 5-backend selection
+- [x] Root `CMakeLists.txt`: `CNA_ROOT_DIR` sibling path, 5-backend selection
       block (desktop + forced `SDL_RENDERER` on Android/Emscripten), target
       setup (`HelloGame` executable on desktop, `SHARED main` on Android,
       `.html` suffix on Emscripten), Content copy step, MinGW/Windows SDL
-      runtime copy, Doxygen target.
-- [ ] `cmake/toolchains/mingw-w64.cmake` and `cmake/web/` helpers.
-- [ ] `include/HelloGame/` + `src/HelloGame/`: `HelloGame.hpp/.cpp`,
+      runtime copy. **Deviation: no Doxygen target** — deliberately dropped
+      as out-of-scope for a minimal template (mobile-eggbert has one, but
+      wiring up a 120KB+ Doxyfile wasn't asked for and isn't needed for
+      `HelloGame`'s current size).
+- [x] `cmake/toolchains/mingw-w64.cmake`. **Deviation: no separate
+      `cmake/web/` helper directory** — the Emscripten asset-preload logic
+      ended up simple enough to write directly inline in `CMakeLists.txt`'s
+      `EMSCRIPTEN` branch; no `pre.js`/IDBFS setup was needed since
+      `HelloGame` has no save data (unlike mobile-eggbert, which this plan
+      used as the structural reference and which does need one).
+- [x] `include/HelloGame/` + `src/HelloGame/`: `HelloGame.hpp/.cpp`,
       `Program.cpp` (entry point).
-- [ ] `Content/`: one placeholder PNG.
-- [ ] `android/`: Gradle project (package `org.openeggbert.cnatemplate`),
+- [x] `Content/`: one placeholder PNG.
+- [x] `android/`: Gradle project (package `org.openeggbert.cnatemplate`),
       modeled on `mobile-eggbert/android` and `cna`'s `demo_devices` Android
       sample.
-- [ ] Confirm/document the Emscripten build branch in `CMakeLists.txt`.
-- [ ] `CMakePresets.json`: presets per backend + a Windows/MSVC preset using
+- [x] Confirm/document the Emscripten build branch in `CMakeLists.txt`.
+      Actually built end-to-end with real emsdk; verified the output bundle
+      correctly embeds `Content/logo.png`.
+- [x] `CMakePresets.json`: presets per backend + a Windows/MSVC preset using
       the Visual Studio generator.
-- [ ] `README.md`: full version — overview, build instructions for every
+- [x] `README.md`: full version — overview, build instructions for every
       platform × backend combination, Android instructions, Web instructions,
-      Visual Studio instructions, and the C#→CNA porting guide from §7.
-- [ ] `CLAUDE.md`.
-- [ ] `LICENSE` (MIT, Robert Vokac).
-- [ ] Keep `NEXT.md` current throughout; final update at the end.
-- [ ] Commit to `develop` throughout; push occasionally per §9; final push
-      when done.
+      Visual Studio instructions, and the C#→CNA porting guide from §7. Since
+      extended further (screenshot, quick start, project structure,
+      "where this fits" positioning, a customization checklist, a table of
+      contents, and a troubleshooting section) — see `NEXT.md`.
+- [x] `CLAUDE.md`.
+- [x] `LICENSE` (MIT, Robert Vokac).
+- [x] Keep `NEXT.md` current throughout; final update at the end. Refreshed
+      again after the `missing.md` and README follow-up rounds.
+- [x] Commit to `develop` throughout; push occasionally per §9; final push
+      when done. `develop` is 18 commits ahead of `master` and pushed;
+      merging `develop` into `master` is a decision for the project owner.
