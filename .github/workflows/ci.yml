@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux (${{ matrix.preset }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [sdl-renderer, easygl]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cna-template
+      - uses: actions/checkout@v4
+        with:
+          repository: openeggbert/cna
+          ref: 16fb1df424c66bb227f15a2d9103f8bcd841a3f1
+          path: cna
+      - uses: actions/checkout@v4
+        with:
+          repository: openeggbert/sharp-runtime
+          ref: 4a1b3dd0612c99a1ee5d47b3a7521126bd00f1da
+          path: sharp-runtime
+      - uses: actions/checkout@v4
+        with:
+          repository: openeggbert/easy-gl
+          ref: 5a50c69aaaee6e032620d95353e91ecfe3b028d9
+          path: easy-gl
+      - name: Configure
+        working-directory: cna-template
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        working-directory: cna-template
+        run: cmake --build --preset ${{ matrix.preset }} --parallel 2
+      - name: Install Xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - name: Smoke test
+        working-directory: cna-template
+        # SDL_VIDEODRIVER=dummy only works for SDL_RENDERER -- EASYGL (and
+        # BGFX/VULKAN) need a real or virtual GL-capable display and throw
+        # "OpenGL support is ... not available in current SDL video driver
+        # (dummy)" under dummy, confirmed by actually running it. xvfb-run
+        # works for every backend uniformly, so use it for both matrix
+        # entries instead of branching per preset.
+        run: xvfb-run -a ctest --test-dir cmake-build-${{ matrix.preset }} --output-on-failure
+
+  windows:
+    name: Windows (Visual Studio)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cna-template
+      - uses: actions/checkout@v4
+        with:
+          repository: openeggbert/cna
+          ref: 16fb1df424c66bb227f15a2d9103f8bcd841a3f1
+          path: cna
+      - uses: actions/checkout@v4
+        with:
+          repository: openeggbert/sharp-runtime
+          ref: 4a1b3dd0612c99a1ee5d47b3a7521126bd00f1da
+          path: sharp-runtime
+      - name: Configure
+        working-directory: cna-template
+        run: cmake --preset windows-vs2022
+      - name: Build
+        working-directory: cna-template
+        run: cmake --build --preset windows-vs2022 --parallel 2
+
+  web:
+    name: Web (Emscripten)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cna-template
+      - uses: actions/checkout@v4
+        with:
+          repository: openeggbert/cna
+          ref: 16fb1df424c66bb227f15a2d9103f8bcd841a3f1
+          path: cna
+      - uses: actions/checkout@v4
+        with:
+          repository: openeggbert/sharp-runtime
+          ref: 4a1b3dd0612c99a1ee5d47b3a7521126bd00f1da
+          path: sharp-runtime
+      - uses: mymindstorm/setup-emsdk@v14
+      - name: Configure
+        working-directory: cna-template
+        run: emcmake cmake --preset web
+      - name: Build
+        working-directory: cna-template
+        run: cmake --build --preset web --parallel 2
+
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cna-template
+      - uses: actions/checkout@v4
+        with:
+          repository: openeggbert/cna
+          ref: 16fb1df424c66bb227f15a2d9103f8bcd841a3f1
+          path: cna
+      - uses: actions/checkout@v4
+        with:
+          repository: openeggbert/sharp-runtime
+          ref: 4a1b3dd0612c99a1ee5d47b3a7521126bd00f1da
+          path: sharp-runtime
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Assemble debug APK
+        working-directory: cna-template/android
+        run: ./gradlew --no-daemon assembleDebug -PcnaRootDir="${GITHUB_WORKSPACE}/cna"

@@ -30,7 +30,8 @@ endif()
 
 # -----------------------------------------------------------------------------
 # Graphics backend selection for CNA.
-# Exactly one backend must be ON.
+# CNA_GRAPHICS_BACKEND is the single public selection interface. The boolean
+# CNA_BACKEND_* cache entries below are implementation details required by CNA.
 # Available backends: SDL_RENDERER, EASYGL, BGFX, VULKAN, WEBGPU
 # -----------------------------------------------------------------------------
 if(EMSCRIPTEN OR ANDROID)
@@ -43,19 +44,18 @@ if(EMSCRIPTEN OR ANDROID)
     set(CNA_BACKEND_WEBGPU       OFF CACHE BOOL "Enable WebGPU backend in CNA"       FORCE)
     set(CNA_GRAPHICS_BACKEND "SDL_RENDERER" CACHE STRING "Selected CNA backend (SDL_RENDERER, EASYGL, BGFX, VULKAN, WEBGPU)" FORCE)
 else()
-    # Desktop: choose one backend. Default is SDL_RENDERER.
-    # To switch, pass exactly one backend ON on the cmake command line, e.g.:
-    #   cmake -DCNA_BACKEND_VULKAN=ON -DCNA_BACKEND_SDL_RENDERER=OFF ...
-    # or use the CNA_GRAPHICS_BACKEND string variable:
-    #   cmake -DCNA_GRAPHICS_BACKEND=VULKAN ...
-    # WEBGPU is experimental and only available if your CNA checkout includes
-    # the cna_backend_graphics_webgpu target; select it explicitly to try it.
-    option(CNA_BACKEND_SDL_RENDERER "Enable SDL_Renderer backend in CNA" OFF)
-    option(CNA_BACKEND_EASY_GL      "Enable easy-gl backend in CNA"      OFF)
-    option(CNA_BACKEND_BGFX         "Enable bgfx backend in CNA"         OFF)
-    option(CNA_BACKEND_VULKAN       "Enable Vulkan backend in CNA"       OFF)
-    option(CNA_BACKEND_WEBGPU       "Enable WebGPU backend in CNA"       OFF)
+    # Desktop: choose one backend. WEBGPU is experimental and requires a CNA
+    # checkout that exposes cna_backend_graphics_webgpu.
     set(CNA_GRAPHICS_BACKEND "SDL_RENDERER" CACHE STRING "Selected CNA backend (SDL_RENDERER, EASYGL, BGFX, VULKAN, WEBGPU)")
+    set_property(CACHE CNA_GRAPHICS_BACKEND PROPERTY STRINGS SDL_RENDERER EASYGL BGFX VULKAN WEBGPU)
+
+    set(_cna_template_backends SDL_RENDERER EASYGL BGFX VULKAN WEBGPU)
+    list(FIND _cna_template_backends "${CNA_GRAPHICS_BACKEND}" _cna_template_backend_index)
+    if(_cna_template_backend_index EQUAL -1)
+        message(FATAL_ERROR
+            "cna-template: unknown CNA_GRAPHICS_BACKEND='${CNA_GRAPHICS_BACKEND}'. "
+            "Choose one of: ${_cna_template_backends}.")
+    endif()
 
     if(CNA_GRAPHICS_BACKEND STREQUAL "SDL_RENDERER")
         set(CNA_BACKEND_SDL_RENDERER ON  CACHE BOOL "" FORCE)
@@ -89,21 +89,33 @@ else()
         set(CNA_BACKEND_WEBGPU       ON  CACHE BOOL "" FORCE)
     endif()
 
-    # If none explicitly set, default to SDL_RENDERER
-    if(NOT CNA_BACKEND_SDL_RENDERER AND NOT CNA_BACKEND_EASY_GL AND NOT CNA_BACKEND_BGFX AND NOT CNA_BACKEND_VULKAN AND NOT CNA_BACKEND_WEBGPU)
-        set(CNA_BACKEND_SDL_RENDERER ON CACHE BOOL "Enable SDL_Renderer backend in CNA" FORCE)
-        set(CNA_GRAPHICS_BACKEND "SDL_RENDERER" CACHE STRING "Selected CNA backend (SDL_RENDERER, EASYGL, BGFX, VULKAN, WEBGPU)" FORCE)
-    endif()
 endif()
 
 # Keep CNA's own configure/build footprint small: this template doesn't need
 # CNA's own test suite or its example applications built alongside HelloGame.
+# Also silence the EASYGL backend's own vendored dependencies (easy-gl, and
+# its own dependency meta-gl) so their internal test suites don't get swept
+# into cna-template's own `ctest` run -- found by actually running `ctest`
+# and seeing 5 unrelated, never-built easy-gl/meta-gl test executables show
+# up as failures ("Not Run") alongside our own HelloGameSmoke. Testing those
+# libraries is their own CI's job, not this template's. meta-gl's own gate is
+# literally named BUILD_TESTING (not a template-specific name), and CMake's
+# option() never overwrites an existing cache entry, so this must run before
+# add_subdirectory(CNA) pulls it in transitively, and cna-template's own test
+# below deliberately does NOT use BUILD_TESTING for exactly this reason (see
+# the CNA_TEMPLATE_BUILD_TESTS option further down).
 set(CNA_BUILD_TESTS    OFF CACHE BOOL "Build CNA tests"                FORCE)
 set(CNA_BUILD_EXAMPLES OFF CACHE BOOL "Build CNA example applications" FORCE)
+set(EASYGL_BUILD_TESTS    OFF CACHE BOOL "Build easy-gl tests"          FORCE)
+set(EASYGL_BUILD_EXAMPLES OFF CACHE BOOL "Build easy-gl examples"       FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "Build the test suite" FORCE)
 
 add_subdirectory("${CNA_ROOT_DIR}" CNA)
 
-file(GLOB_RECURSE HELLOGAME_SOURCES "src/*.cpp")
+set(HELLOGAME_SOURCES
+    src/HelloGame/HelloGame.cpp
+    src/HelloGame/Program.cpp
+)
 
 # On Android the "executable" is a shared library loaded by SDLActivity.
 # SDL's Java glue expects the native library to be named "libmain.so".
@@ -135,30 +147,34 @@ find_package(SDL3_mixer REQUIRED CONFIG)
 # without depending on link order.
 # Note: --start-group/--end-group are not available on Emscripten's linker or
 # on Android (lld does not need it and warns).
+set(_cna_backend_target "")
+if(CNA_GRAPHICS_BACKEND STREQUAL "SDL_RENDERER")
+    set(_cna_backend_target cna_backend_graphics_sdl_renderer)
+elseif(CNA_GRAPHICS_BACKEND STREQUAL "EASYGL")
+    set(_cna_backend_target cna_backend_graphics_easygl)
+elseif(CNA_GRAPHICS_BACKEND STREQUAL "BGFX")
+    set(_cna_backend_target cna_backend_graphics_bgfx)
+elseif(CNA_GRAPHICS_BACKEND STREQUAL "VULKAN")
+    set(_cna_backend_target cna_backend_graphics_vulkan)
+elseif(CNA_GRAPHICS_BACKEND STREQUAL "WEBGPU")
+    set(_cna_backend_target cna_backend_graphics_webgpu)
+endif()
+
+if(NOT TARGET ${_cna_backend_target})
+    message(FATAL_ERROR
+        "cna-template: CNA_GRAPHICS_BACKEND=${CNA_GRAPHICS_BACKEND} was requested, "
+        "but this CNA checkout does not define target '${_cna_backend_target}'. "
+        "Use a CNA revision that supports this backend or select another backend.")
+endif()
+
 if(EMSCRIPTEN)
     target_link_libraries(${_game_target} PRIVATE CNA SDL3::SDL3-static)
 elseif(ANDROID)
     target_link_libraries(${_game_target} PRIVATE CNA SDL3::SDL3 android log)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT WIN32)
-    set(_cna_backend_target "")
-    if(TARGET cna_backend_graphics_easygl)
-        set(_cna_backend_target cna_backend_graphics_easygl)
-    elseif(TARGET cna_backend_graphics_sdl_renderer)
-        set(_cna_backend_target cna_backend_graphics_sdl_renderer)
-    elseif(TARGET cna_backend_graphics_bgfx)
-        set(_cna_backend_target cna_backend_graphics_bgfx)
-    elseif(TARGET cna_backend_graphics_vulkan)
-        set(_cna_backend_target cna_backend_graphics_vulkan)
-    elseif(TARGET cna_backend_graphics_webgpu)
-        set(_cna_backend_target cna_backend_graphics_webgpu)
-    endif()
-    if(_cna_backend_target)
-        target_link_libraries(${_game_target} PRIVATE
-            -Wl,--start-group CNA ${_cna_backend_target} -Wl,--end-group
-            SDL3::SDL3)
-    else()
-        target_link_libraries(${_game_target} PRIVATE CNA SDL3::SDL3)
-    endif()
+    target_link_libraries(${_game_target} PRIVATE
+        -Wl,--start-group CNA ${_cna_backend_target} -Wl,--end-group
+        SDL3::SDL3)
 else()
     target_link_libraries(${_game_target} PRIVATE CNA SDL3::SDL3)
 endif()
@@ -212,4 +228,21 @@ if(MINGW)
     # Statically link the MinGW GCC and C++ runtime so the exe runs outside
     # MSYS2 without needing libgcc_s_seh-1.dll / libstdc++-6.dll.
     target_link_options(${_game_target} PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+# A dedicated option rather than CTest's own BUILD_TESTING: BUILD_TESTING is
+# forced OFF above specifically so easy-gl/meta-gl's own test suites don't
+# leak into this project's ctest run, so reusing that same name here would
+# just disable our own test as a side effect of disabling theirs.
+option(CNA_TEMPLATE_BUILD_TESTS "Register cna-template's own HelloGameSmoke CTest" ON)
+if(CNA_TEMPLATE_BUILD_TESTS AND NOT ANDROID AND NOT EMSCRIPTEN AND NOT CMAKE_CROSSCOMPILING)
+    enable_testing()
+    add_test(NAME HelloGameSmoke COMMAND ${_game_target} --smoke-test)
+    # No SDL_VIDEODRIVER override here: "dummy" only works for SDL_RENDERER
+    # (confirmed by actually running it -- EASYGL/BGFX/VULKAN need a real or
+    # virtual GL-capable display and throw "OpenGL support is ... not
+    # available in current SDL video driver (dummy)" otherwise). Run this
+    # test under SDL_VIDEODRIVER=dummy directly for SDL_RENDERER, or under
+    # `xvfb-run` for any GL-capable backend -- see README's Tests section.
+    set_tests_properties(HelloGameSmoke PROPERTIES TIMEOUT 15)
 endif()

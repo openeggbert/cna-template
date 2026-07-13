@@ -1,5 +1,7 @@
 #include "HelloGame/HelloGame.hpp"
 
+#include <algorithm>
+
 #include "Microsoft/Xna/Framework/Color.hpp"
 #include "Microsoft/Xna/Framework/Graphics/GraphicsDevice.hpp"
 #include "Microsoft/Xna/Framework/Input/Keyboard.hpp"
@@ -8,17 +10,18 @@ using namespace Microsoft::Xna::Framework;
 using namespace Microsoft::Xna::Framework::Graphics;
 using namespace Microsoft::Xna::Framework::Input;
 
-HelloGame::HelloGame()
+HelloGame::HelloGame(const bool smokeTest)
     : graphics_(this),
       logoTexture_(),
-      position_(300.0f, 220.0f)
+      position_(300.0f, 220.0f),
+      smokeTest_(smokeTest),
+      drawnFrames_(0)
 {
     // Deliberately not calling setPreferredBackBufferWidth/HeightProperty()
     // here: doing so made the window visibly resize (and flicker) two or
     // three times during startup as CNA created the window at its own
     // default size and then re-applied ours. Using the manager's default
-    // resolution avoids that entirely; Update() reads the actual size back
-    // at runtime instead of assuming a fixed one.
+    // resolution avoids that entirely.
     Game::getWindowProperty().setTitleProperty("cna-template - HelloGame");
 }
 
@@ -47,8 +50,9 @@ void HelloGame::Update(GameTime& gameTime)
     if (state.IsKeyDown(Keys::Down))  position_.Y += step;
 
     const Rectangle bounds = logoTexture_.getBoundsProperty();
-    const float maxX = static_cast<float>(graphics_.getPreferredBackBufferWidthProperty() - bounds.Width);
-    const float maxY = static_cast<float>(graphics_.getPreferredBackBufferHeightProperty() - bounds.Height);
+    const auto& viewport = getGraphicsDeviceProperty().getViewportProperty();
+    const float maxX = std::max(0.0f, static_cast<float>(viewport.getWidthProperty() - bounds.Width));
+    const float maxY = std::max(0.0f, static_cast<float>(viewport.getHeightProperty() - bounds.Height));
 
     if (position_.X < 0.0f) position_.X = 0.0f;
     if (position_.Y < 0.0f) position_.Y = 0.0f;
@@ -69,6 +73,10 @@ void HelloGame::Draw(const GameTime& gameTime)
     spriteBatch_->End();
 
     device.Present();
+
+    if (smokeTest_ && ++drawnFrames_ >= 3) {
+        Exit();
+    }
 }
 
 GetTypeNameCPP(HelloGame, "HelloGame")

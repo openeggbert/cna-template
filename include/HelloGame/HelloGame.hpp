@@ -19,7 +19,7 @@
  */
 class HelloGame : public Microsoft::Xna::Framework::Game {
 public:
-    HelloGame();
+    explicit HelloGame(bool smokeTest = false);
 
     GetTypeNameHPP()
 
@@ -33,6 +33,8 @@ private:
     std::unique_ptr<Microsoft::Xna::Framework::Graphics::SpriteBatch> spriteBatch_;
     Microsoft::Xna::Framework::Graphics::Texture2D logoTexture_;
     Microsoft::Xna::Framework::Vector2 position_;
+    bool smokeTest_;
+    unsigned int drawnFrames_;
 
     static constexpr float MoveSpeed = 220.0f; // pixels per second
 };

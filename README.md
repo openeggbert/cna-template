@@ -70,6 +70,8 @@ include/HelloGame/       HelloGame.hpp -- delete/replace with your own game
 src/HelloGame/           HelloGame.cpp, Program.cpp (entry point) -- delete/replace with your own game
 Content/                 game assets (PNG/WAV/OGG/etc. -- never .xnb, see the porting guide below)
 android/                 Gradle project; points at this repo's own CMakeLists.txt
+.github/workflows/       CI: Linux smoke tests plus Windows, Web, and Android builds
+dependencies.lock        CNA dependency revisions exercised by CI
 docs/                    README assets (the screenshot above)
 missing.md               upstream CNA/sharp-runtime/mobile-eggbert issues found while building this template
 plan.md, NEXT.md         this template's own development history/planning notes
@@ -80,7 +82,7 @@ plan.md, NEXT.md         this template's own development history/planning notes
 This template ships:
 
 - **CMake wiring for all 5 CNA graphics backends** (`SDL_RENDERER`, `EASYGL`,
-  `BGFX`, `VULKAN`, `WEBGPU`), selectable at configure time.
+  `BGFX`, `VULKAN`, `WEBGPU`), selected with one validated CMake option.
 - **`HelloGame`**, a minimal interactive example (`include/HelloGame/`,
   `src/HelloGame/`) — loads a texture, draws it, and moves it with the arrow
   keys. Delete/replace it with your own game; that's the point of a
@@ -89,6 +91,8 @@ This template ships:
   Linux and Windows.
 - **Visual Studio** support via CMake integration files (see [Windows /
   Visual Studio](#windows--visual-studio) below).
+- **Continuous integration** that builds the supported platform entry points;
+  Linux also runs the example's headless smoke test.
 - A guide for **porting an existing XNA 4.0 C# game** to this template (see
   [Porting a C# XNA 4.0 game](#porting-a-c-xna-40-game) below).
 
@@ -141,6 +145,10 @@ CNA itself vendors SDL3/SDL3_image/SDL3_mixer and builds them from source on
 first configure (cached afterwards) — see `../cna/README.md` for details on
 that process and its own prerequisites.
 
+[`dependencies.lock`](dependencies.lock) records the compatible sibling
+revisions used by CI. It is a reproducible baseline, not a restriction: use a
+newer CNA stack when you deliberately need newer framework functionality.
+
 ## Building
 
 Covers Linux, native Windows, and MinGW cross-compilation from Linux — see
@@ -174,14 +182,34 @@ cmake --build build --target HelloGame
 ./build/HelloGame
 ```
 
-`CNA_GRAPHICS_BACKEND` is one of `SDL_RENDERER`, `EASYGL`, `BGFX`, `VULKAN`,
-`WEBGPU` (equivalently, set exactly one of the `CNA_BACKEND_*` boolean
-options). **`WEBGPU` is experimental and only available if your `../cna`
+`CNA_GRAPHICS_BACKEND` is the only backend-selection option. Its allowed
+values are `SDL_RENDERER`, `EASYGL`, `BGFX`, `VULKAN`, and `WEBGPU`; an
+unknown value now fails configuration instead of silently selecting another
+backend. **`WEBGPU` is experimental and only available if your `../cna`
 checkout defines the `cna_backend_graphics_webgpu` target** — if it doesn't,
 CMake's own configure step now fails with a clear, specific error
 ("known CNA backend name, but this checkout does not yet define a
 cna_backend_graphics_webgpu target") rather than a confusing generic message
 or a silent link failure. Update your CNA checkout if you hit that.
+
+### Tests
+
+Native, non-cross-compiled builds register a short headless smoke test
+(`HelloGameSmoke`). It loads the asset, renders three frames, and exits.
+`SDL_RENDERER` can run it under SDL's dummy video driver, no display needed:
+
+```bash
+SDL_VIDEODRIVER=dummy ctest --test-dir cmake-build-sdl-renderer --output-on-failure
+```
+
+GL-capable backends (`EASYGL`/`BGFX`/`VULKAN`) need a real or virtual display
+instead — the dummy driver cannot create a GL context and the test will fail
+with "OpenGL support is ... not available in current SDL video driver
+(dummy)". Use `xvfb-run` (this is what CI does for every backend, uniformly):
+
+```bash
+xvfb-run -a ctest --test-dir cmake-build-easygl --output-on-failure
+```
 
 ### MinGW-w64 cross-compilation from Linux
 
@@ -250,15 +278,21 @@ adb shell am start -n org.openeggbert.cnatemplate/.HelloGameActivity
 
 The Android project (`android/`) points its CMake `externalNativeBuild` at
 this repository's own root `CMakeLists.txt` and builds `libmain.so`, loaded
-by SDL3's `SDLActivity` Java glue (vendored in `../cna/third_party/SDL/`,
-referenced via a relative path in `android/app/build.gradle` — update that
-path if your CNA checkout isn't at the default `../cna`). `Content/` is
-packaged into the APK via a symlink at
-`android/app/src/main/assets/Content` pointing back to the real `Content/`
-directory, so there's a single source of truth for assets.
+by SDL3's `SDLActivity` Java glue. It uses the same sibling `../cna` default
+as desktop CMake. If CNA is elsewhere, pass its absolute path once and Gradle
+forwards it to both the Java and native build:
+
+```bash
+./gradlew assembleDebug -PcnaRootDir=/path/to/cna
+```
+
+Before each Android build, Gradle synchronizes the root `Content/` directory
+into its generated assets directory as `Content/`. This keeps one source of
+truth without a Git symlink, so checkout works reliably on Windows too.
 
 Only `SDL_RENDERER` is supported on Android (forced automatically, same as
-Web). Not build-tested on this machine (no Android SDK/NDK available here).
+Web). The local environment has no Android SDK/NDK; CI assembles a debug APK,
+while installing and running it on a device remains a manual validation step.
 
 To build a signed release APK, generate a keystore and `android/key.properties`
 (never commit either — both are gitignored):
@@ -374,6 +408,9 @@ auto texture = getContentProperty().Load<Texture2D>("logo"); // loads Content/lo
   [Prerequisites](#prerequisites)) or pass `-DCNA_ROOT_DIR=/path/to/cna`.
 - **"Missing sibling repository 'sharp-runtime'"** — same idea, from CNA's
   own `CMakeLists.txt`; clone `sharp-runtime` next to `cna`.
+- **"unknown CNA_GRAPHICS_BACKEND"** — pass one of `SDL_RENDERER`, `EASYGL`,
+  `BGFX`, `VULKAN`, or `WEBGPU`. Backend boolean flags are CNA internals and
+  are intentionally not a supported template interface.
 - **Undefined backend symbols at link time when using `WEBGPU`** — your
   `../cna` checkout doesn't define the `cna_backend_graphics_webgpu` target
   yet. CMake's configure step now fails early with a specific message for
@@ -388,9 +425,10 @@ auto texture = getContentProperty().Load<Texture2D>("logo"); // loads Content/lo
   zlib vendored by sharp-runtime); see `missing.md` for details. Native
   Windows (MSVC) builds are unaffected.
 - **Gradle sync fails on Android** — check that the NDK version installed in
-  Android Studio matches `ndkVersion` in `android/app/build.gradle`, and
-  that submodules under `../cna/third_party/` are initialized (see
-  `../cna/README.md`).
+  Android Studio matches `ndkVersion` in `android/app/build.gradle`, that
+  submodules under `../cna/third_party/` are initialized (see
+  `../cna/README.md`), and pass `-PcnaRootDir=/path/to/cna` if CNA is not a
+  sibling checkout.
 
 ## Known upstream issues
 

@@ -8,6 +8,22 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
+// Override with -PcnaRootDir=/path/to/cna when CNA is not a sibling checkout.
+def cnaRootDir = file(providers.gradleProperty("cnaRootDir").getOrElse("../cna")).canonicalFile
+def cnaSdlJavaDir = new File(cnaRootDir, "third_party/SDL/android-project/app/src/main/java")
+if (!cnaSdlJavaDir.isDirectory()) {
+    throw new GradleException(
+        "CNA SDL Android Java sources were not found at ${cnaSdlJavaDir}. " +
+        "Clone CNA next to this repository or pass -PcnaRootDir=/path/to/cna."
+    )
+}
+
+def templateContentDir = rootProject.file("../Content")
+if (!templateContentDir.isDirectory()) {
+    throw new GradleException("Game content directory was not found at ${templateContentDir}.")
+}
+def generatedAssetsDir = file("$buildDir/generated/cnaTemplateAssets")
+
 android {
     namespace = "org.openeggbert.cnatemplate"
     compileSdkVersion 35
@@ -24,7 +40,8 @@ android {
             cmake {
                 // Pass Android platform and C++ STL config.
                 arguments "-DANDROID_PLATFORM=android-21",
-                          "-DANDROID_STL=c++_static"
+                          "-DANDROID_STL=c++_static",
+                          "-DCNA_ROOT_DIR=${cnaRootDir}"
                 abiFilters 'arm64-v8a', 'x86_64'
             }
         }
@@ -76,24 +93,11 @@ android {
         }
     }
 
-    // Package game assets into the APK as Android assets (read-only).
-    //
-    // The game loads e.g. "logo.png" via Content.Load<Texture2D>, which resolves
-    // to "Content/logo.png" under ContentManager::RootDirectory. SDL_IOFromFile
-    // on Android first checks internal storage, then the APK AAssetManager.
-    //
-    // src/main/assets/Content is a symlink back to the repo root's Content/
-    // directory (see it in this app module) so there is a single source of
-    // truth for game assets instead of a duplicated copy.
     sourceSets {
         main {
-            assets.srcDirs = ['src/main/assets']
+            assets.srcDirs = [generatedAssetsDir]
             java.srcDirs = [
-                // SDL3 Java glue (SDLActivity, SDLAudioManager, etc.) from the
-                // sibling CNA checkout. If your CNA checkout is not at ../../../cna
-                // relative to this file (i.e. not a sibling of cna-template, matching
-                // CMakeLists.txt's default CNA_ROOT_DIR), update this path.
-                '../../../cna/third_party/SDL/android-project/app/src/main/java',
+                cnaSdlJavaDir,
                 // Game-specific Java (just the minimal stub subclassing SDLActivity)
                 'src/main/java'
             ]
@@ -103,8 +107,17 @@ android {
     }
 
     lint {
-        abortOnError = false
+        abortOnError = true
     }
+}
+
+tasks.register("syncCnaTemplateContent", Sync) {
+    from(templateContentDir)
+    into(new File(generatedAssetsDir, "Content"))
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(tasks.named("syncCnaTemplateContent"))
 }
 
 dependencies {

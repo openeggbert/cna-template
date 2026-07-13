@@ -74,6 +74,10 @@ cmake/toolchains/       - MinGW-w64 cross-compilation toolchain file
   was originally found (by actually building and running, not by reading
   the header), and it's now fixed upstream in `../cna` (see `missing.md`),
   so `Clear(const Color&)` is safe on all 5 backends again.
+- Select a backend only through `CNA_GRAPHICS_BACKEND`; do not expose or
+  document the forwarded `CNA_BACKEND_*` implementation switches.
+- Keep the `HelloGameSmoke` CTest passing on native builds. It is the
+  template's minimal asset-loading and render-loop regression check.
 - Do not add features or abstractions beyond what's requested. This is a
   template — keep `HelloGame` genuinely minimal so it stays easy to delete
   and replace.

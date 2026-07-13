@@ -1,0 +1,6 @@
+# Dependency revisions used by the CI compatibility baseline.
+# The template still supports sibling checkouts so applications can choose
+# newer revisions deliberately; update this file and ci.yml together.
+CNA=16fb1df424c66bb227f15a2d9103f8bcd841a3f1
+SHARP_RUNTIME=4a1b3dd0612c99a1ee5d47b3a7521126bd00f1da
+EASY_GL=5a50c69aaaee6e032620d95353e91ecfe3b028d9
