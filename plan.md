@@ -1,241 +1,124 @@
-# cna-template — Plan
+# plan.md — architecture and history
 
-## 1. What this project is
+## Current architecture (as of the 2026-08-11 modernization)
 
-`cna-template` is a starter/template repository for building applications on top of
-**CNA**, a C++ reimplementation of the XNA 4.0 game framework programming model
-(comparable to MonoGame/FNA, but native C++ instead of C#/.NET). CNA is built on
-SDL3 with a pluggable graphics backend layer.
+The design goal is that **CNA's renderer count can change again without this
+template needing a rewrite.** The previous architecture assumed 7 fixed
+"backends"; CNA grew to 46 "renderers" under a renamed variable, and every part
+of the old template that hard-coded the 7 broke silently. This is the
+architecture built to survive the next such change.
 
-CNA lives in a sibling repository:
+### One manifest, not N duplicated lists
+
+`cmake/renderers.json` is the single place template-side renderer facts live:
+platform applicability, display requirement, dependency, CI tier, notes.
+Everything else is generated or validated against it:
+
 ```
-../cna
+cmake/renderers.json
+        │
+        ├── cmake/CnaRenderers.cmake ──► CMakeLists.txt (validation, drift check)
+        │
+        └── tools/gen_renderer_files.py ──┬──► CMakePresets.json (generated)
+                                           ├──► docs/renderers.md (generated)
+                                           └──► CI matrix (.github/workflows/ci.yml,
+                                                via --ci-matrix)
 ```
 
-The purpose of `cna-template` is to give someone starting a brand-new CNA
-application (or porting an existing XNA 4.0 C# game/app) a working, buildable
-skeleton: CMake wiring for all graphics backends, a minimal example game
-(`HelloGame`) that the user deletes/replaces with their own code, and Android +
-Web build support out of the box.
+The manifest does **not** own renderer *names* — CNA does, in
+`cna/cmake/RendererSelection.cmake`. Both the CMake side
+(`cna_template_canonical_renderers()`) and the Python side
+(`canonical_from_cna()`) parse that file directly and diff it against the
+manifest. A renderer CNA adds or removes shows up as a named `FATAL_ERROR` (at
+configure time) or a `--check` failure (in CI) rather than as a silent gap.
 
-All project content (code, comments, docs, commit messages) is in English, even
-though instructions to build this template were given in Czech.
+### Selection is CNA's own variable, passed through unmodified
 
-## 2. Reference projects used as inspiration
+`CNA_GRAPHICS_RENDERER` is CNA's public cache variable. This template does not
+rename it, does not re-declare its default, and does not maintain a competing
+list of "supported" values — it validates the value CNA would receive anyway,
+earlier, with a better error message. If you set nothing, CNA's own default
+applies.
 
-- **`../mobile-eggbert`** — a real, working 2D platformer (a C++/CNA port of the
-  2013 Windows Phone XNA game "Speedy Blupi"). This is the primary structural
-  model for `cna-template`: its root `CMakeLists.txt` backend-selection block,
-  its `android/` Gradle project, its Emscripten/web CMake branch, and its
-  `cmake/toolchains/mingw-w64.cmake` cross-compilation toolchain were all read
-  directly and adapted.
-- **`../cna`** — the CNA framework itself. Its `README.md` §10 "Usage Example"
-  is the canonical minimal `Game` subclass skeleton. Its `examples/demo_2d/`
-  sample (`Game1.hpp/.cpp`, `Main.cpp`) shows a slightly fuller pattern
-  (`GetTypeNameHPP()`/`GetTypeNameCPP()` boilerplate, `ContentManager::Load<T>`,
-  keyboard/gamepad-free flyer animation). Its `examples/demo_devices/android/`
-  sample is a complete, working Android Studio/Gradle project (SDL Java glue,
-  manifest, `app/jni/CMakeLists.txt`) that was used as the Android scaffold
-  reference.
-- **`../cna-samples`** — dozens of official Microsoft XNA Game Studio 4.0 C#
-  samples, ported to CNA/C++ one by one. Used as inspiration for the
-  "porting an existing C# XNA game" section of the README, and as the source of
-  the asset-conversion tooling references (`tools/make_font.py`,
-  `tools/obj2model.py`, `tools/fbx_ascii2model.py`) and the XNB/`.fx`/SpriteFont
-  handling conventions described below.
+### No renderer-name branching in application code or CMake
 
-Note: on this development machine, `../cna` and `../cna_graphics` are two
-separate local checkouts of the *same* GitHub repository
-(`git@github-openeggbert:openeggbert/cna.git`) — `mobile-eggbert` happens to use
-a sibling directory literally named `cna_graphics`. `cna-template` does not
-hardcode either name: the path to the CNA checkout is a CMake cache variable
-(`CNA_ROOT_DIR`, default `${CMAKE_SOURCE_DIR}/../cna`) so it works regardless of
-what the sibling directory is called on a given machine.
+`CMakeLists.txt` has zero `if(CNA_GRAPHICS_RENDERER STREQUAL ...)` branches for
+behavior. Renderer-specific facts it needs (display requirement, web link
+flags, whether the renderer is in the GL family) come from
+`cna_template_renderer_field()` reading the manifest.
 
-## 3. Graphics backends
+`HelloGame` similarly avoids `#ifdef CNA_RENDERER_*` or name checks. It queries
+`GraphicsDevice::SupportsCapability(CNA::GraphicsCapability::X)` and probes
+`GameWindow::GetNativeSdlWindowEXT()` for "do I have a window", which is
+accurate on all 46 renderers today and stays accurate if CNA adds a 47th.
 
-CNA has **5** selectable graphics backends (confirmed directly from
-`mobile-eggbert`'s working `CMakeLists.txt`, which is more current than CNA's
-own `README.md`/`CMakePresets.json`, neither of which yet document the 5th):
+### The `CNA` target is trusted, not second-guessed
 
-| Backend | CMake option | Notes |
-|---|---|---|
-| `SDL_RENDERER` | `CNA_BACKEND_SDL_RENDERER` | 2D-only, most portable, default on Android/Emscripten |
-| `EASYGL` | `CNA_BACKEND_EASY_GL` | Most mature backend, full 2D+3D (OpenGL) |
-| `BGFX` | `CNA_BACKEND_BGFX` | Full 2D+3D, bgfx-based |
-| `VULKAN` | `CNA_BACKEND_VULKAN` | Real 3D rendering via Vulkan |
-| `WEBGPU` | `CNA_BACKEND_WEBGPU` | Experimental, native `wgpu-native` |
+CNA's `modules/CMakeLists.txt` defines `CNA` as an INTERFACE library that
+already links every framework module, the resolved renderer target, and the
+public compile definitions. The old template manually resolved a renderer
+target name (`cna_backend_graphics_<lowercase>`) and wrapped it in a linker
+group. Both are gone: `target_link_libraries(${_app} PRIVATE CNA
+SHARP_RUNTIME)` is the entire link line, matching the pattern CNA's own
+examples use.
 
-Selection also works via a single string cache variable `CNA_GRAPHICS_BACKEND`
-(`SDL_RENDERER` / `EASYGL` / `BGFX` / `VULKAN` / `WEBGPU`), mirroring
-`mobile-eggbert`'s pattern. On Android and Emscripten only `SDL_RENDERER` is
-supported/forced (no desktop GL/Vulkan context available the same way).
+### Diagnostics teach, not just reject
 
-## 4. Platforms
+An invalid renderer/platform combination doesn't just fail — the error names
+what platforms the renderer *is* valid on, offers a cross-compile command if one
+exists (`cmake --preset windows-<renderer>` / `web-<renderer>`), and lists
+renderers that *would* work here. An unknown name gets a "did you mean"
+suggestion, and `EASYGL` specifically gets a migration hint, since it is the
+single most likely stale name someone pastes from old documentation (including
+this template's own, before this pass).
 
-Same platform matrix as `mobile-eggbert`:
+## History
 
-- **Linux** (native, GCC/Clang)
-- **Windows** (native MSVC, and MinGW-w64 cross-compilation from Linux)
-- **Web** (Emscripten → HTML+JS+WASM)
-- **Android** (Gradle + CMake external native build, SDL3 Java glue, produces a
-  `libmain.so` loaded by `SDLActivity`)
+### 2026-07 — original template (7 backends)
 
-Visual Studio support on Windows is delivered as **CMake integration files**
-(`CMakePresets.json` entries using the `Visual Studio 17 2022` generator, plus
-documentation of Visual Studio's native "Open Folder" CMake workflow) rather
-than hand-authored/committed `.sln`/`.vcxproj` files. This was a deliberate
-choice (confirmed with the project owner): real `.sln`/`.vcxproj` files are
-generated by CMake itself, cannot be validated on this Linux development
-machine (no Visual Studio/MSBuild installed here), and would drift out of sync
-with `CMakeLists.txt` if hand-written and committed. The owner will open the
-folder in Visual Studio on Windows and test it personally.
+Built against a CNA revision with 7 selectable "graphics backends"
+(`SDL_RENDERER`, `EASYGL`, `BGFX`, `VULKAN`, `WEBGPU`, `HEADLESS`, `SOFTWARE`)
+chosen via `CNA_GRAPHICS_BACKEND`, with target names derived by lowercasing.
+Reasonable for the CNA that existed then. See earlier `NEXT.md`/`missing.md`
+history (preserved in git log) for the incremental fixes made during that
+period — the double-Present() flicker, the `Clear(Color)` crash, and others,
+all now folded into `missing.md`'s "Fixed upstream" section.
 
-## 5. `HelloGame` — the example application
+### 2026-08-11 — 46-renderer modernization
 
-`cna-template` ships a minimal but real 2D example, `HelloGame`, under
-`include/HelloGame/` and `src/HelloGame/`, mirroring CNA's own README §10
-"Usage Example" skeleton (a `Game` subclass with a `GraphicsDeviceManager`
-member, `LoadContent`/`Update`/`Draw` overrides) plus the
-`GetTypeNameHPP()`/`GetTypeNameCPP()` boilerplate every concrete CNA `Game`
-subclass needs. It:
+CNA's `develop` branch had, by this point, absorbed a large parallel
+integration ("reconcile parallel feature lanes", `cna@7a64362`) that landed
+DirectX 1–12, Direct2D, GDI, Glide, ten renderer-agnostic middleware
+integrations (bgfx, Vulkan, WebGPU, Magnum, Wicked, Sokol, Diligent, LLGL,
+FNA3D, PortableGL), three browser-DOM renderers (Canvas, HTML DOM, SVG DOM),
+and split the old monolithic "EasyGL" backend into five public GL-profile
+names. The public selection variable was renamed to `CNA_GRAPHICS_RENDERER` in
+the same window. None of it was reflected in this template, which meant the
+template's build was completely non-functional against current CNA — proven
+directly: the old `CNA_GRAPHICS_BACKEND=VULKAN` was silently ignored, and CNA
+fell back to its own `OPENGLES3` default instead.
 
-- loads one PNG texture from `Content/` via `ContentManager::Load<Texture2D>`,
-- draws it with `SpriteBatch`,
-- moves it around the screen with the arrow keys (`Keyboard::GetState()` /
-  `KeyboardState::IsKeyDown`) so it's an interactive "hello world", not just a
-  static image,
-- is intended to be **deleted and replaced** by whatever the template's user
-  is actually building — the README says so explicitly.
+This pass:
 
-## 6. Content and the XNB question
+- Established the canonical 46-renderer inventory directly from
+  `cna/cmake/RendererSelection.cmake`, with per-renderer platform gates,
+  dependencies and target names (five parallel research agents, one
+  synthesized fact set — see the evidence ledger this session produced).
+- Found and worked around two real upstream CNA bugs that block *any*
+  downstream consumer, not just this template (`missing.md` CNA-1): a
+  module-layout validator and a vendored-header include path both resolve
+  against the consumer's `CMAKE_SOURCE_DIR` instead of CNA's own root.
+- Found and worked around a third (CNA-2): the GL-profile compile definition
+  does not propagate to a consumer, so a consumer's own code misreports which
+  of the five GL renderers is active.
+- Rebuilt the CMake, presets, CI, `HelloGame`, and every piece of documentation
+  around the manifest-driven architecture described above.
+- Re-verified every non-renderer claim the template made about CNA (XNB,
+  models, fonts, effects, audio, input, networking) against current
+  implementation rather than trusting old prose. The most significant reversal:
+  CNA now has a complete `.xnb` read path (including LZX decompression); the
+  template had twice stated CNA would never support this.
 
-`Content/` ships exactly one original placeholder PNG image for `HelloGame` to
-load and draw (generated for this template, not reused game art from
-`mobile-eggbert` or any sample).
-
-**CNA does not support `.xnb` (the compiled XNA Content Pipeline binary
-format) and is not expected to ever support it** — confirmed directly in CNA's
-own `Effect.hpp` (the bytecode-`Effect` constructor always throws
-`NotImplementedException`) and repeatedly stated in `cna-samples`' own
-`DEFERRED.md`/`PLAN.md`. Anyone porting an existing XNA game must convert their
-original `.xnb`-compiled assets (or, more commonly, the pre-compiled *source*
-assets that shipped alongside the XNA project before the Content Pipeline
-compiled them) to open formats CNA can load directly:
-
-| XNA asset type | CNA-loadable format |
-|---|---|
-| `Texture2D` | PNG (or any format SDL3_image reads) |
-| `SoundEffect` / `Song` | WAV / OGG |
-| `Model` | glTF or OBJ (`tools/obj2model.py`, `tools/fbx_ascii2model.py` in `cna-samples` convert to CNA's `.model.json` + binary buffers) |
-| `SpriteFont` | CNA's own `.font.json` descriptor + PNG glyph atlas (`tools/make_font.py <ttf> <size> <out>` in `cna-samples` generates both from a TrueType font) |
-| `Effect` (compiled `.fx`) | Hand-translated GLSL source via CNA's `ShaderEffect` (NOXNA, takes GLSL strings directly — no file-based loader built in), or one of CNA's built-in stock effects (`BasicEffect`, `AlphaTestEffect`, `DualTextureEffect`, `EnvironmentMapEffect`, `SkinnedEffect`, `SpriteEffect`) |
-
-If the original `.xnb` files are the *only* thing available (source assets
-lost), extraction requires an external tool such as MonoGame's
-`MonoGame.Content.Builder`/`mgcb` — CNA and `cna-template` do not ship an XNB
-reader/decoder of any kind.
-
-## 7. Porting an existing C# XNA 4.0 game — README section
-
-The README's porting section (based on `cna-samples/CLAUDE.md`'s porting
-checklist) must explain the concrete C#→C++ mechanical rules:
-
-- **Properties**: CNA has no public fields for XNA properties — every
-  C# `Foo` property becomes a `getFooProperty()`/`setFooProperty(value)` pair
-  (e.g. `graphics.PreferredBackBufferWidth = 800` →
-  `graphics.setPreferredBackBufferWidthProperty(800)`).
-- **`GetTypeName()`**: every concrete `Game` subclass must declare
-  `GetTypeNameHPP()` in its header and `GetTypeNameCPP(ClassName, "ClassName")`
-  at file scope in its `.cpp` — CNA/sharp-runtime bookkeeping with no XNA
-  equivalent, required to compile.
-- **Namespaces** carry over unchanged: `Microsoft::Xna::Framework`,
-  `...::Graphics`, `...::Audio`, `...::Input`, `...::Content`, etc. match real
-  XNA/FNA namespaces, so existing API knowledge transfers directly.
-- **Common type mappings**: `List<T>` → `std::vector<T>`, `string` →
-  `std::string`, `foreach` → range-`for`, nullable → `std::optional`, `new
-  Foo()` → stack allocation or `std::make_unique<Foo>()`, `TimeSpan` →
-  `System::TimeSpan` (sharp-runtime).
-- **No garbage collector**: object lifetime must be made explicit
-  (`std::unique_ptr`, RAII, or manual `new`/`delete` matching CNA's own
-  examples).
-- **Assets**: never `.xnb` — see §6 above.
-- Recommend using `../cna-samples` as a library of real, working ported
-  examples to consult when a specific XNA API's CNA equivalent isn't obvious.
-
-## 8. CLAUDE.md
-
-A `CLAUDE.md` is included for future Claude Code sessions working in this repo,
-modeled on `mobile-eggbert/CLAUDE.md` and `cna-samples/CLAUDE.md`: where CNA and
-sharp-runtime live, the property-getter/setter convention, the
-`GetTypeNameHPP`/`GetTypeNameCPP` requirement, and a pointer to
-`../cna/CLAUDE.md` for CNA-internal rules that don't apply to a consumer
-project.
-
-## 9. Git workflow for building this template
-
-- First commit on `master`: `.gitignore` + `README.md` only. Pushed once made.
-- All further work happens as commits on a `develop` branch.
-- Commits happen frequently (one per coherent unit of work), but `develop` is
-  only **pushed** to `origin` occasionally — after several commits or at a
-  clear milestone — not after every single commit. A final push happens once
-  the work described in this plan is actually done.
-- `NEXT.md` is kept up to date throughout as a running log of what's done and
-  what's next, in case work is picked up in a later session.
-
-## 10. Task checklist
-
-**Status note (added after the fact): every item below is done.** This
-checklist was written before implementation started and was never synced
-back to reflect completed work as the build-out actually happened — progress
-was tracked via the session's internal task list and via `NEXT.md` instead,
-and this file's checkboxes were simply never updated. Not a case of
-unfinished work; a case of stale planning documentation. Fixed now (see two
-noted deviations from the original plan below, both deliberate scope
-decisions rather than oversights).
-
-- [x] Research CNA, mobile-eggbert, cna-samples structure and APIs.
-- [x] Decide license (MIT), Visual Studio deliverable format (CMake
-      integration files), Android application ID
-      (`org.openeggbert.cnatemplate`) with the project owner.
-- [x] Write this plan.md.
-- [x] Initial commit on `master`: `.gitignore`, `README.md` stub. Push. Create
-      `develop` branch.
-- [x] Root `CMakeLists.txt`: `CNA_ROOT_DIR` sibling path, 5-backend selection
-      block (desktop + forced `SDL_RENDERER` on Android/Emscripten), target
-      setup (`HelloGame` executable on desktop, `SHARED main` on Android,
-      `.html` suffix on Emscripten), Content copy step, MinGW/Windows SDL
-      runtime copy. **Deviation: no Doxygen target** — deliberately dropped
-      as out-of-scope for a minimal template (mobile-eggbert has one, but
-      wiring up a 120KB+ Doxyfile wasn't asked for and isn't needed for
-      `HelloGame`'s current size).
-- [x] `cmake/toolchains/mingw-w64.cmake`. **Deviation: no separate
-      `cmake/web/` helper directory** — the Emscripten asset-preload logic
-      ended up simple enough to write directly inline in `CMakeLists.txt`'s
-      `EMSCRIPTEN` branch; no `pre.js`/IDBFS setup was needed since
-      `HelloGame` has no save data (unlike mobile-eggbert, which this plan
-      used as the structural reference and which does need one).
-- [x] `include/HelloGame/` + `src/HelloGame/`: `HelloGame.hpp/.cpp`,
-      `Program.cpp` (entry point).
-- [x] `Content/`: one placeholder PNG.
-- [x] `android/`: Gradle project (package `org.openeggbert.cnatemplate`),
-      modeled on `mobile-eggbert/android` and `cna`'s `demo_devices` Android
-      sample.
-- [x] Confirm/document the Emscripten build branch in `CMakeLists.txt`.
-      Actually built end-to-end with real emsdk; verified the output bundle
-      correctly embeds `Content/logo.png`.
-- [x] `CMakePresets.json`: presets per backend + a Windows/MSVC preset using
-      the Visual Studio generator.
-- [x] `README.md`: full version — overview, build instructions for every
-      platform × backend combination, Android instructions, Web instructions,
-      Visual Studio instructions, and the C#→CNA porting guide from §7. Since
-      extended further (screenshot, quick start, project structure,
-      "where this fits" positioning, a customization checklist, a table of
-      contents, and a troubleshooting section) — see `NEXT.md`.
-- [x] `CLAUDE.md`.
-- [x] `LICENSE` (MIT, Robert Vokac).
-- [x] Keep `NEXT.md` current throughout; final update at the end. Refreshed
-      again after the `missing.md` and README follow-up rounds.
-- [x] Commit to `develop` throughout; push occasionally per §9; final push
-      when done. `develop` is 18 commits ahead of `master` and pushed;
-      merging `develop` into `master` is a decision for the project owner.
+The next time CNA's renderer count changes, the intended procedure is the four
+steps in `CLAUDE.md`'s "When CNA gains or loses a renderer" section — not
+another audit of this scope.

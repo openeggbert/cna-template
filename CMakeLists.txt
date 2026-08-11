@@ -1,211 +1,281 @@
-cmake_minimum_required(VERSION 3.21)
-project(CnaTemplate LANGUAGES C CXX)
+# =============================================================================
+# cna-template — a starter project for the CNA game framework.
+# =============================================================================
+# Everything renderer-specific in this file is driven by cmake/renderers.json
+# (see cmake/CnaRenderers.cmake). There is deliberately no per-renderer
+# if/elseif chain here: CNA has 46 renderers and keeps growing, so the template
+# treats the renderer set as data rather than as code.
+#
+# CMake 3.23 is the floor because the easy-gl/meta-gl siblings backing the
+# OPENGLES2/OPENGLES3/OPENGL33/WEBGL1/WEBGL2 renderers require it (FILE_SET
+# HEADERS). CNA itself only needs 3.20, but a template that could not build the
+# GL family would be a poor starting point.
+cmake_minimum_required(VERSION 3.23)
 
-message(STATUS "Project: ${PROJECT_NAME}")
-message(STATUS "Platform: ${CMAKE_SYSTEM_NAME}")
-message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+project(CnaTemplate VERSION 0.1.0 LANGUAGES C CXX)
+
+# --- Customization point: rename your application here -----------------------
+# Drives the executable name and the CTest name. Renaming the C++ class itself
+# is a separate step -- see "Making this your own project" in README.md.
+set(CNA_TEMPLATE_APP_NAME "HelloGame" CACHE STRING
+    "Name of the application executable produced by this template")
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(CnaRenderers)
+
+message(STATUS "cna-template: ${PROJECT_NAME} -> ${CNA_TEMPLATE_APP_NAME}")
+message(STATUS "cna-template: platform ${CMAKE_SYSTEM_NAME}, "
+               "compiler ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+
+# -----------------------------------------------------------------------------
+# Upstream compatibility preflight
+# -----------------------------------------------------------------------------
+# CNA's module-layout validator (cna/modules/CMakeLists.txt) aborts the build if
+# a directory named src/ or include/ exists at ${CMAKE_SOURCE_DIR}. When CNA is
+# consumed with add_subdirectory(), CMAKE_SOURCE_DIR is *this* project rather
+# than CNA -- so any consumer using the conventional src/ + include/ layout dies
+# with the confusing message "legacy global 'src/' tree reappeared at the
+# repository root". That is an upstream bug; see missing.md.
+#
+# This template therefore keeps its sources under game/. The check below exists
+# so that if you add src/ or include/ back you are told why it breaks, instead
+# of being sent to go looking inside CNA.
+foreach(_cna_template_reserved IN ITEMS src include)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/${_cna_template_reserved}")
+        message(FATAL_ERROR
+            "cna-template: a directory named '${_cna_template_reserved}/' at the top level of\n"
+            "this project makes CNA's module-layout validator abort the configure.\n"
+            "\n"
+            "This is an upstream CNA bug: cna/modules/CMakeLists.txt tests\n"
+            "  \${CMAKE_SOURCE_DIR}/${_cna_template_reserved}\n"
+            "which is the CONSUMER's root when CNA is added with add_subdirectory(),\n"
+            "not CNA's own root. Until it is fixed upstream, keep application sources\n"
+            "elsewhere -- this template uses game/src and game/include.\n"
+            "\n"
+            "missing.md has the one-line upstream fix.")
+    endif()
+endforeach()
+
 # -----------------------------------------------------------------------------
 # CNA framework location
 # -----------------------------------------------------------------------------
-# CNA is a SIBLING repository checkout, not a git submodule of this template
-# (same convention as mobile-eggbert / cna-samples). Override with
-# -DCNA_ROOT_DIR=/path/to/cna if your checkout uses a different directory
-# name or location.
+# CNA is a sibling checkout, not a submodule, and is consumed with
+# add_subdirectory(): CNA installs and exports no CMake package, so
+# find_package(CNA) does not exist.
 set(CNA_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../cna" CACHE PATH
     "Path to the CNA framework checkout")
 
 if(NOT EXISTS "${CNA_ROOT_DIR}/CMakeLists.txt")
     message(FATAL_ERROR
         "cna-template: CNA framework not found at '${CNA_ROOT_DIR}'.\n"
-        "CNA is a separate sibling repository, not part of this template. "
-        "Clone it next to this project, e.g.:\n"
+        "CNA is a separate sibling repository, not part of this template:\n"
         "  cd ${CMAKE_CURRENT_SOURCE_DIR}/.. && git clone https://github.com/openeggbert/cna.git\n"
-        "or pass -DCNA_ROOT_DIR=/path/to/cna to cmake.")
+        "or pass -DCNA_ROOT_DIR=/path/to/cna to cmake.\n"
+        "README.md \"Prerequisites\" lists every checkout you need.")
 endif()
 
 # -----------------------------------------------------------------------------
-# Graphics backend selection.
+# Renderer selection
 # -----------------------------------------------------------------------------
-# `CNA_GRAPHICS_BACKEND` is the only thing that needs setting. CNA's own
-# CMakeLists.txt keys every downstream decision (which backend sources to
-# compile, which target to create, which sibling deps to pull in) off this one
-# string.
+# CNA_GRAPHICS_RENDERER is CNA's own public cache variable and this template
+# passes it straight through -- it deliberately does not re-declare a default.
+# If you set nothing, CNA picks its own (WEBGL2 on the web, OPENGLES3 on Linux,
+# SDL_RENDERER elsewhere) and the template validates the result afterwards.
 #
-# CNA also exposes a parallel set of CNA_BACKEND_* boolean options, but those
-# are an *optional, alternative* input path: they all default to OFF, and CNA
-# only consults them if you explicitly switch one ON -- in which case it
-# derives CNA_GRAPHICS_BACKEND from the boolean instead. So a consumer that
-# just sets the string never has to touch them, and this file deliberately
-# doesn't. (It used to force all of them, ~60 lines of if/elseif copied
-# uncritically from mobile-eggbert; that was pure redundancy, and it also
-# silently locked out the backends CNA has added since.)
-set(CNA_TEMPLATE_BACKENDS SDL_RENDERER EASYGL BGFX VULKAN WEBGPU HEADLESS SOFTWARE)
-
-if(EMSCRIPTEN OR ANDROID)
-    # Only SDL_RENDERER is supported on these two platforms (no desktop GL
-    # context the same way; SDL_RENDERER runs on WebGL/GLES under the hood).
-    # FORCE is required: CNA's own default for Emscripten is EASYGL.
-    set(CNA_GRAPHICS_BACKEND "SDL_RENDERER" CACHE STRING "CNA graphics backend" FORCE)
+# CNA also exposes 46 CNA_RENDERER_<NAME> booleans as an alternative input path.
+# They all default to OFF and CNA only consults them if one is switched ON, so
+# setting the string alone is sufficient and this file leaves them alone.
+if(DEFINED CNA_GRAPHICS_RENDERER AND NOT CNA_GRAPHICS_RENDERER STREQUAL "")
+    cna_template_validate_renderer("${CNA_GRAPHICS_RENDERER}" "${CNA_ROOT_DIR}")
+    message(STATUS "cna-template: renderer ${CNA_GRAPHICS_RENDERER} (requested)")
 else()
-    set(CNA_GRAPHICS_BACKEND "VULKAN" CACHE STRING "CNA graphics backend")
-endif()
-set_property(CACHE CNA_GRAPHICS_BACKEND PROPERTY STRINGS ${CNA_TEMPLATE_BACKENDS})
-
-if(NOT CNA_GRAPHICS_BACKEND IN_LIST CNA_TEMPLATE_BACKENDS)
-    message(FATAL_ERROR
-        "cna-template: unknown CNA_GRAPHICS_BACKEND='${CNA_GRAPHICS_BACKEND}'. "
-        "Choose one of: ${CNA_TEMPLATE_BACKENDS}.")
+    message(STATUS "cna-template: no renderer requested; using CNA's default for this platform")
 endif()
 
-# Keep CNA's own configure/build footprint small: this template doesn't need
-# CNA's own test suite or its example applications built alongside HelloGame.
-# Also silence the EASYGL backend's own vendored dependencies (easy-gl, and
-# its own dependency meta-gl) so their internal test suites don't get swept
-# into cna-template's own `ctest` run -- found by actually running `ctest`
-# and seeing 5 unrelated, never-built easy-gl/meta-gl test executables show
-# up as failures ("Not Run") alongside our own HelloGameSmoke. Testing those
-# libraries is their own CI's job, not this template's. meta-gl's own gate is
-# literally named BUILD_TESTING (not a template-specific name), and CMake's
-# option() never overwrites an existing cache entry, so this must run before
-# add_subdirectory(CNA) pulls it in transitively, and cna-template's own test
-# below deliberately does NOT use BUILD_TESTING for exactly this reason (see
-# the CNA_TEMPLATE_BUILD_TESTS option further down).
-set(CNA_BUILD_TESTS    OFF CACHE BOOL "Build CNA tests"                FORCE)
-set(CNA_BUILD_EXAMPLES OFF CACHE BOOL "Build CNA example applications" FORCE)
-set(EASYGL_BUILD_TESTS    OFF CACHE BOOL "Build easy-gl tests"          FORCE)
-set(EASYGL_BUILD_EXAMPLES OFF CACHE BOOL "Build easy-gl examples"       FORCE)
-set(BUILD_TESTING OFF CACHE BOOL "Build the test suite" FORCE)
+# -----------------------------------------------------------------------------
+# CNA build options
+# -----------------------------------------------------------------------------
+# Keep CNA's own footprint small: an application needs neither the framework's
+# test suite nor its demo applications. easy-gl's gates default ON and it is
+# pulled in for the whole GL renderer family, so silence those too. meta-gl's
+# own tests already default OFF, so no BUILD_TESTING override is needed.
+set(CNA_BUILD_TESTS       OFF CACHE BOOL "Build CNA tests"                FORCE)
+set(CNA_BUILD_EXAMPLES    OFF CACHE BOOL "Build CNA example applications" FORCE)
+set(EASYGL_BUILD_TESTS    OFF CACHE BOOL "Build easy-gl tests"            FORCE)
+set(EASYGL_BUILD_EXAMPLES OFF CACHE BOOL "Build easy-gl examples"         FORCE)
+
+# Same upstream root cause as the src/include guard above: CNA's content module
+# adds its vendored single-header include paths as ${CMAKE_SOURCE_DIR}/third_party/...,
+# which resolves into the CONSUMER's tree rather than CNA's. Building CNA as a
+# subdirectory therefore fails with "fatal error: cgltf.h: No such file or
+# directory". INCLUDE_DIRECTORIES is a directory property that subdirectories
+# inherit, so setting the correct paths here repairs the search path without
+# modifying CNA. Recorded in missing.md; remove once CNA uses its own root.
+foreach(_cna_vendored_header_dir IN ITEMS cgltf stb)
+    if(EXISTS "${CNA_ROOT_DIR}/third_party/${_cna_vendored_header_dir}")
+        include_directories("${CNA_ROOT_DIR}/third_party/${_cna_vendored_header_dir}")
+    endif()
+endforeach()
 
 add_subdirectory("${CNA_ROOT_DIR}" CNA)
 
-set(HELLOGAME_SOURCES
-    src/HelloGame/HelloGame.cpp
-    src/HelloGame/Program.cpp
+# CNA has now resolved the renderer (ours or its own default) and published the
+# canonical list in the cache. Re-check both against the manifest.
+cna_template_assert_no_drift()
+cna_template_validate_renderer("${CNA_GRAPHICS_RENDERER}" "${CNA_ROOT_DIR}")
+
+cna_template_renderer_field("${CNA_GRAPHICS_RENDERER}" display   CNA_TEMPLATE_RENDERER_DISPLAY)
+cna_template_renderer_field("${CNA_GRAPHICS_RENDERER}" dimension CNA_TEMPLATE_RENDERER_DIMENSION)
+message(STATUS "cna-template: renderer ${CNA_GRAPHICS_RENDERER} "
+               "(${CNA_TEMPLATE_RENDERER_DIMENSION}, display: ${CNA_TEMPLATE_RENDERER_DISPLAY})")
+
+# SDL3's IMPORTED targets are created by find_package() inside CNA's directory
+# scope, so they are not visible up here. Re-importing is cheap and idempotent:
+# CNA has already cached SDL3_DIR pointing at the SDL it built. This must come
+# after add_subdirectory() for exactly that reason.
+if(NOT TARGET SDL3::SDL3)
+    find_package(SDL3 REQUIRED CONFIG)
+endif()
+
+# -----------------------------------------------------------------------------
+# The application
+# -----------------------------------------------------------------------------
+set(CNA_TEMPLATE_SOURCES
+    game/src/HelloGame.cpp
+    game/src/Program.cpp
 )
 
-# On Android the "executable" is a shared library loaded by SDLActivity.
-# SDL's Java glue expects the native library to be named "libmain.so".
+# On Android the "executable" is a shared library that SDL's Java glue loads by
+# name, so the target name is fixed regardless of CNA_TEMPLATE_APP_NAME.
 if(ANDROID)
-    set(_game_target main)
-    add_library(${_game_target} SHARED ${HELLOGAME_SOURCES})
+    set(_app main)
+    add_library(${_app} SHARED ${CNA_TEMPLATE_SOURCES})
 else()
-    set(_game_target HelloGame)
-    add_executable(${_game_target} ${HELLOGAME_SOURCES})
+    set(_app ${CNA_TEMPLATE_APP_NAME})
+    add_executable(${_app} ${CNA_TEMPLATE_SOURCES})
 endif()
 
-# On Emscripten the output is HTML+JS+WASM; set the suffix accordingly.
-if(EMSCRIPTEN)
-    set_target_properties(${_game_target} PROPERTIES SUFFIX ".html")
+target_include_directories(${_app} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/game/include")
+
+# CNA propagates CNA_RENDERER_<X> to consumers through its cna_build_flags
+# INTERFACE, but applies CNA_GL_PROFILE_<X> with a directory-scoped
+# add_compile_definitions() that never reaches a parent-scope consumer. The five
+# GL renderers all share the define CNA_RENDERER_EASYGL, so without the profile
+# CNA::getCurrentGraphicsRendererName() falls through to its OPENGLES3 default
+# and misreports OPENGLES2/OPENGL33/WEBGL1/WEBGL2 in *our* translation units
+# while CNA's own report the truth. Re-applying it here restores agreement.
+# Upstream fix recorded in missing.md.
+cna_template_renderer_field("${CNA_GRAPHICS_RENDERER}" category _renderer_category)
+if(_renderer_category STREQUAL "gl-easygl")
+    target_compile_definitions(${_app} PRIVATE "CNA_GL_PROFILE_${CNA_GRAPHICS_RENDERER}")
 endif()
 
-target_include_directories(${_game_target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-# CNA builds SDL3 once into its own prebuilt root and sets SDL3_DIR / SDL3_image_DIR /
-# SDL3_mixer_DIR in the CMake cache. SDL IMPORTED targets are directory-scoped, so we
-# must call find_package() here to make SDL3::SDL3 visible in this project's scope.
-find_package(SDL3       REQUIRED CONFIG)
-find_package(SDL3_image REQUIRED CONFIG)
-find_package(SDL3_mixer REQUIRED CONFIG)
-
-# CNA and the selected graphics backend static library have circular symbol
-# references on Linux (backend uses Color/Rectangle/Matrix from CNA, CNA uses
-# backend interfaces). Wrap them in a linker group so GNU ld resolves both
-# without depending on link order.
-# Note: --start-group/--end-group are not available on Emscripten's linker or
-# on Android (lld does not need it and warns).
-# CNA names its backend targets cna_backend_graphics_<backend, lowercased>,
-# for every backend it has -- so the whole mapping is one string(TOLOWER).
-string(TOLOWER "${CNA_GRAPHICS_BACKEND}" _cna_backend_lower)
-set(_cna_backend_target "cna_backend_graphics_${_cna_backend_lower}")
-
-if(NOT TARGET ${_cna_backend_target})
-    message(FATAL_ERROR
-        "cna-template: CNA_GRAPHICS_BACKEND=${CNA_GRAPHICS_BACKEND} was requested, "
-        "but this CNA checkout does not define target '${_cna_backend_target}'. "
-        "Use a CNA revision that supports this backend or select another backend.")
-endif()
-
-if(EMSCRIPTEN)
-    target_link_libraries(${_game_target} PRIVATE CNA SDL3::SDL3-static)
-elseif(ANDROID)
-    target_link_libraries(${_game_target} PRIVATE CNA SDL3::SDL3 android log)
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT WIN32)
-    target_link_libraries(${_game_target} PRIVATE
-        -Wl,--start-group CNA ${_cna_backend_target} -Wl,--end-group
-        SDL3::SDL3)
-else()
-    target_link_libraries(${_game_target} PRIVATE CNA SDL3::SDL3)
-endif()
+# CNA is an INTERFACE umbrella already carrying every framework module, the
+# selected renderer target, the public compile definitions and the public
+# include directories. Linking a renderer target by hand is obsolete, and so is
+# the old -Wl,--start-group wrapper: CNA declares its static-library cycles on
+# the targets themselves, and a linker group around an INTERFACE library
+# expands to nothing anyway.
+target_link_libraries(${_app} PRIVATE CNA SHARP_RUNTIME)
 
 if(TARGET SDL3::SDL3main)
-    target_link_libraries(${_game_target} PRIVATE SDL3::SDL3main)
+    target_link_libraries(${_app} PRIVATE SDL3::SDL3main)
 endif()
 
+# -----------------------------------------------------------------------------
+# Platform specifics
+# -----------------------------------------------------------------------------
 if(ANDROID)
-    # No content copy needed on Android: assets are packaged into the APK
-    # (see android/app/build.gradle sourceSets.main.assets.srcDirs).
+    # CNA links android/log PUBLIC on its own device module, so they arrive
+    # through the umbrella; only SDL3 has to be named here.
+    target_link_libraries(${_app} PRIVATE SDL3::SDL3)
+    # Assets are packaged into the APK -- see android/app/build.gradle.
+
 elseif(EMSCRIPTEN)
-    # Preload Content/ into the Emscripten virtual filesystem at /Content,
-    # matching the relative path the game uses at runtime.
-    target_link_options(${_game_target} PRIVATE
+    target_link_libraries(${_app} PRIVATE SDL3::SDL3)
+    set_target_properties(${_app} PROPERTIES SUFFIX ".html")
+
+    # CNA enables the Wasm exception-handling ABI in its own directory scope.
+    # Directory properties propagate downward only, so this target -- defined in
+    # the parent scope -- must opt in explicitly or the link fails with
+    # "wasm-ld: undefined symbol: __cpp_exception".
+    target_compile_options(${_app} PRIVATE -fwasm-exceptions)
+    target_link_options(${_app} PRIVATE -fwasm-exceptions)
+
+    target_link_options(${_app} PRIVATE
         -sALLOW_MEMORY_GROWTH=1
         -sSTACK_SIZE=1048576
         -sINITIAL_MEMORY=134217728
         -sFORCE_FILESYSTEM=1
-        "SHELL:--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/Content@/Content"
-        "-sMIN_WEBGL_VERSION=2"
-        "-sMAX_WEBGL_VERSION=2"
-    )
+        # Let main() actually return, so --smoke-test terminates the process.
+        -sEXIT_RUNTIME=1
+        "SHELL:--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/Content@/Content")
+
+    # WebGL version constraints are per renderer, not global: pinning
+    # MIN/MAX_WEBGL_VERSION=2 for every web build would break WEBGL1, and the
+    # CANVAS/HTML_DOM/SVG_DOM renderers create no WebGL context at all.
+    cna_template_renderer_field("${CNA_GRAPHICS_RENDERER}" webflags _webflags)
+    if(_webflags)
+        target_link_options(${_app} PRIVATE ${_webflags})
+    endif()
+
 else()
-    # Native desktop: copy Content/ next to the executable.
-    set(CNA_TEMPLATE_CONTENT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Content")
-    if(EXISTS "${CNA_TEMPLATE_CONTENT_DIR}")
-        add_custom_command(TARGET ${_game_target} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CNA_TEMPLATE_CONTENT_DIR}"
-                "$<TARGET_FILE_DIR:${_game_target}>/Content"
-                COMMENT "Copying game content next to executable")
+    # Native desktop: put Content/ next to the executable so the relative paths
+    # the game uses at runtime resolve.
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Content")
+        add_custom_command(TARGET ${_app} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/Content"
+                "$<TARGET_FILE_DIR:${_app}>/Content"
+            COMMENT "Copying game content next to ${_app}")
     endif()
 endif()
 
 if(WIN32)
-    # Copy SDL3/SDL3_image/SDL3_mixer (and any other imported runtime DLL
-    # dependency, including MinGW's libwinpthread) next to the executable.
-    # Uses CMake's own TARGET_RUNTIME_DLLS generator expression (CMake >= 3.21)
-    # instead of a CNA-internal helper function, since functions defined via
-    # include() while CNA is processed as our subdirectory are not visible
-    # back in this top-level scope.
-    add_custom_command(TARGET ${_game_target} POST_BUILD
+    # CNA defines these helpers; CMake functions are global once defined, so they
+    # are callable here after add_subdirectory(). Fall back to CMake's own
+    # TARGET_RUNTIME_DLLS if a CNA revision does not provide them.
+    if(COMMAND cna_copy_sdl_runtime)
+        cna_copy_sdl_runtime(${_app})
+    else()
+        add_custom_command(TARGET ${_app} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "$<TARGET_RUNTIME_DLLS:${_game_target}>" "$<TARGET_FILE_DIR:${_game_target}>"
+                "$<TARGET_RUNTIME_DLLS:${_app}>" "$<TARGET_FILE_DIR:${_app}>"
             COMMAND_EXPAND_LISTS
-            COMMENT "Copying runtime DLLs next to executable")
+            COMMENT "Copying runtime DLLs next to ${_app}")
+    endif()
 endif()
 
 if(MINGW)
-    # Statically link the MinGW GCC and C++ runtime so the exe runs outside
-    # MSYS2 without needing libgcc_s_seh-1.dll / libstdc++-6.dll.
-    target_link_options(${_game_target} PRIVATE -static-libgcc -static-libstdc++)
+    # Run outside MSYS2 without shipping libgcc_s_seh-1.dll / libstdc++-6.dll.
+    target_link_options(${_app} PRIVATE -static-libgcc -static-libstdc++)
 endif()
 
-# A dedicated option rather than CTest's own BUILD_TESTING: BUILD_TESTING is
-# forced OFF above specifically so easy-gl/meta-gl's own test suites don't
-# leak into this project's ctest run, so reusing that same name here would
-# just disable our own test as a side effect of disabling theirs.
-option(CNA_TEMPLATE_BUILD_TESTS "Register cna-template's own HelloGameSmoke CTest" ON)
+# -----------------------------------------------------------------------------
+# Tests
+# -----------------------------------------------------------------------------
+option(CNA_TEMPLATE_BUILD_TESTS "Register cna-template's own smoke test" ON)
+
 if(CNA_TEMPLATE_BUILD_TESTS AND NOT ANDROID AND NOT EMSCRIPTEN AND NOT CMAKE_CROSSCOMPILING)
     enable_testing()
-    add_test(NAME HelloGameSmoke COMMAND ${_game_target} --smoke-test)
-    # No SDL_VIDEODRIVER override here: "dummy" only works for SDL_RENDERER
-    # (confirmed by actually running it -- EASYGL/BGFX/VULKAN need a real or
-    # virtual GL-capable display and throw "OpenGL support is ... not
-    # available in current SDL video driver (dummy)" otherwise). Run this
-    # test under SDL_VIDEODRIVER=dummy directly for SDL_RENDERER, or under
-    # `xvfb-run` for any GL-capable backend -- see README's Tests section.
-    set_tests_properties(HelloGameSmoke PROPERTIES TIMEOUT 15)
+    add_test(NAME ${CNA_TEMPLATE_APP_NAME}Smoke COMMAND ${_app} --smoke-test)
+
+    # Label the test by what it needs from the environment, so CI can run the
+    # display-free renderers with no X server at all and reserve xvfb-run for
+    # the ones that genuinely open a window:
+    #   ctest -L headless               # no display required
+    #   xvfb-run -a ctest -L display
+    if(CNA_TEMPLATE_RENDERER_DISPLAY STREQUAL "none")
+        set(_labels headless)
+    else()
+        set(_labels display)
+    endif()
+
+    set_tests_properties(${CNA_TEMPLATE_APP_NAME}Smoke PROPERTIES
+        TIMEOUT 30
+        LABELS "${_labels}")
 endif()

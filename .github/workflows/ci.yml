@@ -1,129 +1,297 @@
 name: CI
 
+# Tiered on purpose. CNA has 46 renderers across five platforms, and a naive
+# "every renderer x every platform" matrix would be mostly impossible
+# combinations (a GitHub runner cannot build a DirectX renderer on Linux, or
+# Metal anywhere but macOS) and would take hours to tell you nothing.
+#
+#   Tier A  structure   every push — cheap, catches manifest/preset/doc drift
+#   Tier B  core        every push — representative renderers, built AND run
+#   Tier C  broad       scheduled/manual — wider renderer set, build only
+#   Tier D  platforms   every push — web and Android, which need their own SDKs
+#
+# The renderer lists are NOT written here. They come from cmake/renderers.json
+# via tools/gen_renderer_files.py --ci-matrix, so adding a renderer to the
+# manifest is enough to put it in CI, and a renderer cannot be listed correctly
+# in the manifest and wrongly in this file.
+
 on:
   push:
   pull_request:
+  schedule:
+    - cron: '0 4 * * 1'   # Monday 04:00 UTC — tier C
   workflow_dispatch:
+    inputs:
+      broad:
+        description: 'Run the broad (tier C) renderer matrix'
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
+env:
+  # One place to change the validated compatibility baseline. Keep in step with
+  # dependencies.lock — the structure job checks that they agree.
+  CNA_REF: 7a64362efef4119bf880459ef1704fb2c52199e2
+  SHARP_RUNTIME_REF: f827a6c5349234d5ac938886788ed8eca8fe1c10
+  EASY_GL_REF: 0b46d35c394a9fb6aea6a85c6587894b5013da33
+  META_GL_REF: 571d3a62fe166b9781ac6193d137b12ff3757620
+  FREE_DIRECT_REF: 934f72ff0c52902631fceeb52c006f3ed2767485
+
 jobs:
-  linux:
-    name: Linux (${{ matrix.preset }})
+  # --- Tier A -------------------------------------------------------------
+  structure:
+    name: Structure and drift
+    runs-on: ubuntu-latest
+    outputs:
+      tier_b: ${{ steps.matrix.outputs.tier_b }}
+      tier_c: ${{ steps.matrix.outputs.tier_c }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: cna-template }
+      - uses: actions/checkout@v4
+        with:
+          repository: openeggbert/cna
+          ref: ${{ env.CNA_REF }}
+          path: cna
+
+      - name: Generated files match the manifest
+        working-directory: cna-template
+        # Also cross-checks the manifest against CNA's own canonical renderer
+        # list, so a renderer added upstream fails here rather than silently
+        # going missing from the template.
+        run: python3 tools/gen_renderer_files.py --check
+
+      - name: Pinned revisions match dependencies.lock
+        working-directory: cna-template
+        run: |
+          set -eu
+          fail=0
+          check() {
+            want=$(grep "^$1=" dependencies.lock | cut -d= -f2)
+            if [ "$want" != "$2" ]; then
+              echo "::error::dependencies.lock has $1=$want but the workflow pins $2"
+              fail=1
+            fi
+          }
+          check CNA           "$CNA_REF"
+          check SHARP_RUNTIME "$SHARP_RUNTIME_REF"
+          check EASY_GL       "$EASY_GL_REF"
+          check META_GL       "$META_GL_REF"
+          check FREE_DIRECT   "$FREE_DIRECT_REF"
+          exit $fail
+
+      - name: Presets parse
+        working-directory: cna-template
+        run: cmake --list-presets
+
+      - id: matrix
+        name: Build renderer matrices from the manifest
+        working-directory: cna-template
+        run: |
+          echo "tier_b=$(python3 tools/gen_renderer_files.py --ci-matrix linux --tiers B)" >> "$GITHUB_OUTPUT"
+          echo "tier_c=$(python3 tools/gen_renderer_files.py --ci-matrix linux --tiers C)" >> "$GITHUB_OUTPUT"
+
+  # --- Tier B -------------------------------------------------------------
+  linux-core:
+    name: Linux ${{ matrix.renderer }}
+    needs: structure
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        preset: [sdl-renderer, easygl]
+        renderer: ${{ fromJSON(needs.structure.outputs.tier_b) }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: cna-template
+        with: { path: cna-template }
       - uses: actions/checkout@v4
-        with:
-          repository: openeggbert/cna
-          ref: 16fb1df424c66bb227f15a2d9103f8bcd841a3f1
-          path: cna
+        with: { repository: openeggbert/cna, ref: '${{ env.CNA_REF }}', path: cna }
       - uses: actions/checkout@v4
-        with:
-          repository: openeggbert/sharp-runtime
-          ref: 4a1b3dd0612c99a1ee5d47b3a7521126bd00f1da
-          path: sharp-runtime
+        with: { repository: openeggbert/sharp-runtime, ref: '${{ env.SHARP_RUNTIME_REF }}', path: sharp-runtime }
       - uses: actions/checkout@v4
-        with:
-          repository: openeggbert/easy-gl
-          ref: 5a50c69aaaee6e032620d95353e91ecfe3b028d9
-          path: easy-gl
+        with: { repository: openeggbert/easy-gl, ref: '${{ env.EASY_GL_REF }}', path: easy-gl }
+      - uses: actions/checkout@v4
+        with: { repository: openeggbert/meta-gl, ref: '${{ env.META_GL_REF }}', path: meta-gl }
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build ccache pkg-config xvfb \
+            libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
+            libgl1-mesa-dev libglu1-mesa-dev mesa-utils
+
+      - name: Fetch CNA's vendored SDL submodules
+        working-directory: cna
+        run: git submodule update --init third_party/SDL third_party/SDL_image third_party/SDL_mixer third_party/enet
+
+      - uses: hendrikmuhs/ccache-action@v1
+        with: { key: 'linux-${{ matrix.renderer }}' }
+
       - name: Configure
         working-directory: cna-template
-        run: cmake --preset ${{ matrix.preset }}
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCNA_GRAPHICS_RENDERER=${{ matrix.renderer }}
+
       - name: Build
         working-directory: cna-template
-        run: cmake --build --preset ${{ matrix.preset }} --parallel 2
-      - name: Install Xvfb
-        run: sudo apt-get update && sudo apt-get install -y xvfb
-      - name: Smoke test
+        run: cmake --build build --parallel 3
+
+      # The smoke test carries a CTest label describing what it needs. The four
+      # windowless renderers run with no display at all; the rest get Xvfb.
+      - name: Smoke test (no display)
         working-directory: cna-template
-        # SDL_VIDEODRIVER=dummy only works for SDL_RENDERER -- EASYGL (and
-        # BGFX/VULKAN) need a real or virtual GL-capable display and throw
-        # "OpenGL support is ... not available in current SDL video driver
-        # (dummy)" under dummy, confirmed by actually running it. xvfb-run
-        # works for every backend uniformly, so use it for both matrix
-        # entries instead of branching per preset.
-        run: xvfb-run -a ctest --test-dir cmake-build-${{ matrix.preset }} --output-on-failure
+        run: ctest --test-dir build -L headless --output-on-failure --no-tests=ignore
+
+      - name: Smoke test (virtual display)
+        working-directory: cna-template
+        run: xvfb-run -a ctest --test-dir build -L display --output-on-failure --no-tests=ignore
+
+  # --- Tier C -------------------------------------------------------------
+  linux-broad:
+    name: Linux ${{ matrix.renderer }} (build only)
+    needs: structure
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        renderer: ${{ fromJSON(needs.structure.outputs.tier_c) }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: cna-template }
+      - uses: actions/checkout@v4
+        with: { repository: openeggbert/cna, ref: '${{ env.CNA_REF }}', path: cna }
+      - uses: actions/checkout@v4
+        with: { repository: openeggbert/sharp-runtime, ref: '${{ env.SHARP_RUNTIME_REF }}', path: sharp-runtime }
+      - uses: actions/checkout@v4
+        with: { repository: openeggbert/easy-gl, ref: '${{ env.EASY_GL_REF }}', path: easy-gl }
+      - uses: actions/checkout@v4
+        with: { repository: openeggbert/meta-gl, ref: '${{ env.META_GL_REF }}', path: meta-gl }
+      - uses: actions/checkout@v4
+        with: { repository: openeggbert/free-direct, ref: '${{ env.FREE_DIRECT_REF }}', path: free-direct }
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build ccache pkg-config \
+            libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
+            libgl1-mesa-dev libglu1-mesa-dev libvulkan-dev \
+            libgles-dev libshaderc-dev
+
+      - name: Fetch CNA's vendored SDL submodules
+        working-directory: cna
+        run: git submodule update --init third_party/SDL third_party/SDL_image third_party/SDL_mixer third_party/enet
+
+      - uses: hendrikmuhs/ccache-action@v1
+        with: { key: 'linux-broad-${{ matrix.renderer }}' }
+
+      - name: Configure
+        working-directory: cna-template
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCNA_GRAPHICS_RENDERER=${{ matrix.renderer }}
+
+      - name: Build
+        working-directory: cna-template
+        run: cmake --build build --parallel 3
+
+  # --- Tier D: platforms with their own SDKs ------------------------------
+  web:
+    name: Web (${{ matrix.renderer }})
+    needs: structure
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # WEBGL2 is CNA's own web default; CANVAS is the WebGL-free DOM path.
+        # Both are built to prove the per-renderer Emscripten link flags work —
+        # a single global WebGL setting would break one of them.
+        renderer: [WEBGL2, CANVAS]
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: cna-template }
+      - uses: actions/checkout@v4
+        with: { repository: openeggbert/cna, ref: '${{ env.CNA_REF }}', path: cna }
+      - uses: actions/checkout@v4
+        with: { repository: openeggbert/sharp-runtime, ref: '${{ env.SHARP_RUNTIME_REF }}', path: sharp-runtime }
+      - uses: actions/checkout@v4
+        with: { repository: openeggbert/easy-gl, ref: '${{ env.EASY_GL_REF }}', path: easy-gl }
+      - uses: actions/checkout@v4
+        with: { repository: openeggbert/meta-gl, ref: '${{ env.META_GL_REF }}', path: meta-gl }
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with: { version: 6.0.3 }
+
+      - name: Fetch CNA's vendored SDL submodules
+        working-directory: cna
+        run: git submodule update --init third_party/SDL third_party/SDL_image third_party/SDL_mixer third_party/enet
+
+      - name: Configure
+        working-directory: cna-template
+        run: emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release -DCNA_GRAPHICS_RENDERER=${{ matrix.renderer }}
+
+      - name: Build
+        working-directory: cna-template
+        run: cmake --build build-web --parallel 3
+
+      - name: Check the web artifacts exist
+        working-directory: cna-template
+        run: |
+          set -eu
+          for f in HelloGame.html HelloGame.js HelloGame.wasm HelloGame.data; do
+            test -f "build-web/$f" || { echo "::error::missing build-web/$f"; exit 1; }
+          done
+          ls -la build-web/HelloGame.*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-${{ matrix.renderer }}
+          path: cna-template/build-web/HelloGame.*
 
   windows:
-    name: Windows (Visual Studio)
+    name: Windows (MSVC, SDL_RENDERER)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: cna-template
+        with: { path: cna-template }
       - uses: actions/checkout@v4
-        with:
-          repository: openeggbert/cna
-          ref: 16fb1df424c66bb227f15a2d9103f8bcd841a3f1
-          path: cna
+        with: { repository: openeggbert/cna, ref: '${{ env.CNA_REF }}', path: cna }
       - uses: actions/checkout@v4
-        with:
-          repository: openeggbert/sharp-runtime
-          ref: 4a1b3dd0612c99a1ee5d47b3a7521126bd00f1da
-          path: sharp-runtime
-      - name: Configure
-        working-directory: cna-template
-        run: cmake --preset windows-vs2022
-      - name: Build
-        working-directory: cna-template
-        run: cmake --build --preset windows-vs2022 --parallel 2
+        with: { repository: openeggbert/sharp-runtime, ref: '${{ env.SHARP_RUNTIME_REF }}', path: sharp-runtime }
 
-  web:
-    name: Web (Emscripten)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          path: cna-template
-      - uses: actions/checkout@v4
-        with:
-          repository: openeggbert/cna
-          ref: 16fb1df424c66bb227f15a2d9103f8bcd841a3f1
-          path: cna
-      - uses: actions/checkout@v4
-        with:
-          repository: openeggbert/sharp-runtime
-          ref: 4a1b3dd0612c99a1ee5d47b3a7521126bd00f1da
-          path: sharp-runtime
-      - uses: mymindstorm/setup-emsdk@v14
+      - name: Fetch CNA's vendored SDL submodules
+        working-directory: cna
+        run: git submodule update --init third_party/SDL third_party/SDL_image third_party/SDL_mixer third_party/enet
+
       - name: Configure
         working-directory: cna-template
-        run: emcmake cmake --preset web
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCNA_GRAPHICS_RENDERER=SDL_RENDERER
+
       - name: Build
         working-directory: cna-template
-        run: cmake --build --preset web --parallel 2
+        run: cmake --build build --config Debug --parallel 3
 
   android:
-    name: Android
+    name: Android (Gradle)
     runs-on: ubuntu-latest
+    # Not gating pull requests on it: CNA's own documentation currently
+    # disagrees with itself about whether the NDK cross-build works, so a
+    # failure here is more likely to be upstream than to be this template.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: cna-template
+        with: { path: cna-template }
       - uses: actions/checkout@v4
-        with:
-          repository: openeggbert/cna
-          ref: 16fb1df424c66bb227f15a2d9103f8bcd841a3f1
-          path: cna
+        with: { repository: openeggbert/cna, ref: '${{ env.CNA_REF }}', path: cna }
       - uses: actions/checkout@v4
-        with:
-          repository: openeggbert/sharp-runtime
-          ref: 4a1b3dd0612c99a1ee5d47b3a7521126bd00f1da
-          path: sharp-runtime
+        with: { repository: openeggbert/sharp-runtime, ref: '${{ env.SHARP_RUNTIME_REF }}', path: sharp-runtime }
+
       - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+        with: { distribution: temurin, java-version: '17' }
       - uses: android-actions/setup-android@v3
+
+      - name: Fetch CNA's vendored SDL submodules
+        working-directory: cna
+        run: git submodule update --init third_party/SDL third_party/SDL_image third_party/SDL_mixer third_party/enet
+
       - name: Assemble debug APK
         working-directory: cna-template/android
         run: ./gradlew --no-daemon assembleDebug -PcnaRootDir="${GITHUB_WORKSPACE}/cna"

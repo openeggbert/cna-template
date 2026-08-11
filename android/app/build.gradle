@@ -10,6 +10,12 @@ if (keystorePropertiesFile.exists()) {
 
 // Override with -PcnaRootDir=/path/to/cna when CNA is not a sibling checkout.
 def cnaRootDir = file(providers.gradleProperty("cnaRootDir").getOrElse("../cna")).canonicalFile
+
+// Override with -PcnaRenderer=OPENGLES3 to pick a renderer other than CNA's own
+// Android default (SDL_RENDERER). Not every renderer is Android-capable -- see
+// docs/renderers.md -- and the ones that need ../easy-gl + ../meta-gl need those
+// siblings present regardless of how this is built.
+def cnaRenderer = providers.gradleProperty("cnaRenderer").getOrElse("")
 def cnaSdlJavaDir = new File(cnaRootDir, "third_party/SDL/android-project/app/src/main/java")
 if (!cnaSdlJavaDir.isDirectory()) {
     throw new GradleException(
@@ -39,9 +45,15 @@ android {
         externalNativeBuild {
             cmake {
                 // Pass Android platform and C++ STL config.
-                arguments "-DANDROID_PLATFORM=android-21",
-                          "-DANDROID_STL=c++_static",
-                          "-DCNA_ROOT_DIR=${cnaRootDir}"
+                def cmakeArgs = [
+                        "-DANDROID_PLATFORM=android-21",
+                        "-DANDROID_STL=c++_static",
+                        "-DCNA_ROOT_DIR=${cnaRootDir}"
+                ]
+                if (!cnaRenderer.isEmpty()) {
+                    cmakeArgs.add("-DCNA_GRAPHICS_RENDERER=${cnaRenderer}")
+                }
+                arguments cmakeArgs.toArray(new String[0])
                 abiFilters 'arm64-v8a', 'x86_64'
             }
         }

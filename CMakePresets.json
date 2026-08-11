@@ -1,6 +1,10 @@
 {
   "version": 3,
-  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 23,
+    "patch": 0
+  },
   "configurePresets": [
     {
       "name": "base",
@@ -10,97 +14,679 @@
       }
     },
     {
-      "name": "sdl-renderer",
-      "displayName": "Desktop - SDL_Renderer backend",
-      "description": "Most portable backend, 2D-only. Same backend forced on Android/Emscripten.",
-      "inherits": "base",
-      "binaryDir": "${sourceDir}/cmake-build-sdl-renderer",
-      "cacheVariables": { "CNA_GRAPHICS_BACKEND": "SDL_RENDERER" }
-    },
-    {
-      "name": "easygl",
-      "displayName": "Desktop - EasyGL backend",
-      "description": "Most mature backend, full 2D+3D via OpenGL.",
-      "inherits": "base",
-      "binaryDir": "${sourceDir}/cmake-build-easygl",
-      "cacheVariables": { "CNA_GRAPHICS_BACKEND": "EASYGL" }
-    },
-    {
-      "name": "bgfx",
-      "displayName": "Desktop - bgfx backend",
-      "description": "Full 2D+3D via bgfx.",
-      "inherits": "base",
-      "binaryDir": "${sourceDir}/cmake-build-bgfx",
-      "cacheVariables": { "CNA_GRAPHICS_BACKEND": "BGFX" }
-    },
-    {
-      "name": "vulkan",
-      "displayName": "Desktop - Vulkan backend",
-      "description": "Real 3D rendering via Vulkan.",
-      "inherits": "base",
-      "binaryDir": "${sourceDir}/cmake-build-vulkan",
-      "cacheVariables": { "CNA_GRAPHICS_BACKEND": "VULKAN" }
-    },
-    {
-      "name": "webgpu",
-      "displayName": "Desktop - WebGPU backend (experimental)",
-      "description": "Experimental native wgpu-native backend. Requires a CNA checkout that includes the cna_backend_graphics_webgpu target.",
-      "inherits": "base",
-      "binaryDir": "${sourceDir}/cmake-build-webgpu",
-      "cacheVariables": { "CNA_GRAPHICS_BACKEND": "WEBGPU" }
-    },
-    {
-      "name": "headless",
-      "displayName": "Headless backend (no GPU, no window)",
-      "description": "No GPU or window at all. Useful for CI and tests.",
-      "inherits": "base",
-      "binaryDir": "${sourceDir}/cmake-build-headless",
-      "cacheVariables": { "CNA_GRAPHICS_BACKEND": "HEADLESS" }
-    },
-    {
-      "name": "software",
-      "displayName": "Software backend (CPU rasterizer)",
-      "description": "CPU rasterizer; no GPU required.",
-      "inherits": "base",
-      "binaryDir": "${sourceDir}/cmake-build-software",
-      "cacheVariables": { "CNA_GRAPHICS_BACKEND": "SOFTWARE" }
-    },
-    {
-      "name": "web",
-      "displayName": "Web (Emscripten)",
-      "description": "Builds HelloGame.html/.js/.wasm. Requires EMSDK active (source emsdk_env.sh) and configuring with: emcmake cmake --preset web",
-      "binaryDir": "${sourceDir}/cmake-build-web",
+      "name": "release",
+      "hidden": true,
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CNA_GRAPHICS_BACKEND": "SDL_RENDERER"
+        "CMAKE_BUILD_TYPE": "Release"
       }
     },
     {
-      "name": "windows-vs2022",
-      "displayName": "Windows - Visual Studio 17 2022",
-      "description": "Visual Studio's native CMake integration reads this preset directly (File > Open > Folder, or the CMake tool window). Not build-tested on this machine (no Visual Studio/MSBuild available) -- please verify on Windows.",
-      "generator": "Visual Studio 17 2022",
-      "architecture": "x64",
-      "binaryDir": "${sourceDir}/cmake-build-vs2022",
+      "name": "web-base",
+      "hidden": true,
+      "inherits": "release",
+      "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
+    },
+    {
+      "name": "mingw-base",
+      "hidden": true,
+      "inherits": "base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64.cmake",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "sdl-renderer",
+      "displayName": "SDL_RENDERER \u2014 Most portable renderer, and CNA's default off Linux",
+      "description": "2D renderer. Platforms: linux, windows, macos, android. Dependency: none.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-sdl-renderer",
       "cacheVariables": {
-        "CNA_GRAPHICS_BACKEND": "SDL_RENDERER"
+        "CNA_GRAPHICS_RENDERER": "SDL_RENDERER"
+      }
+    },
+    {
+      "name": "sdl-gpu",
+      "displayName": "SDL_GPU \u2014 SDL3's own GPU abstraction",
+      "description": "2D3D renderer. Platforms: linux, windows, macos. Dependency: system libshaderc.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-sdl-gpu",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "SDL_GPU"
+      }
+    },
+    {
+      "name": "opengles3",
+      "displayName": "OPENGLES3 \u2014 CNA's default renderer on Linux",
+      "description": "2D3D renderer. Platforms: linux, windows, macos, android. Dependency: sibling ../easy-gl (which needs ../meta-gl).",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-opengles3",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "OPENGLES3"
+      }
+    },
+    {
+      "name": "opengles2",
+      "displayName": "OPENGLES2 \u2014 Internally EasyGL, GLES 2.0 profile",
+      "description": "2D3D renderer. Platforms: linux, windows, macos, android. Dependency: sibling ../easy-gl (which needs ../meta-gl).",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-opengles2",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "OPENGLES2"
+      }
+    },
+    {
+      "name": "opengl33",
+      "displayName": "OPENGL33 \u2014 Internally EasyGL, desktop GL 3.3 core profile",
+      "description": "2D3D renderer. Platforms: linux, windows, macos. Dependency: sibling ../easy-gl (which needs ../meta-gl).",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-opengl33",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "OPENGL33"
+      }
+    },
+    {
+      "name": "web-webgl2",
+      "displayName": "WEBGL2 \u2014 CNA's default renderer under Emscripten",
+      "description": "2D3D renderer. Platforms: web. Dependency: sibling ../easy-gl (which needs ../meta-gl).",
+      "inherits": "web-base",
+      "binaryDir": "${sourceDir}/build-web-webgl2",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "WEBGL2"
+      }
+    },
+    {
+      "name": "web-webgl1",
+      "displayName": "WEBGL1 \u2014 WebGL 1 profile",
+      "description": "2D3D renderer. Platforms: web. Dependency: sibling ../easy-gl (which needs ../meta-gl).",
+      "inherits": "web-base",
+      "binaryDir": "${sourceDir}/build-web-webgl1",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "WEBGL1"
+      }
+    },
+    {
+      "name": "opengl1",
+      "displayName": "OPENGL1 \u2014 Legacy fixed-function OpenGL 1.x",
+      "description": "2D3D renderer. Platforms: linux, windows. Dependency: system OpenGL.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-opengl1",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "OPENGL1"
+      }
+    },
+    {
+      "name": "opengl2",
+      "displayName": "OPENGL2 \u2014 Desktop OpenGL 2.1 compatibility profile, GLSL 1.10",
+      "description": "2D3D renderer. Platforms: linux, windows, macos. Dependency: system OpenGL.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-opengl2",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "OPENGL2"
+      }
+    },
+    {
+      "name": "opengl4",
+      "displayName": "OPENGL4 \u2014 Real desktop OpenGL 4.x core profile, independent of EasyGL",
+      "description": "2D3D renderer. Platforms: linux, windows, macos. Dependency: system OpenGL.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-opengl4",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "OPENGL4"
+      }
+    },
+    {
+      "name": "vulkan",
+      "displayName": "VULKAN \u2014 Real 3D via Vulkan",
+      "description": "2D3D renderer. Platforms: linux, windows. Dependency: system Vulkan SDK (find_package(Vulkan REQUIRED)).",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-vulkan",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "VULKAN"
+      }
+    },
+    {
+      "name": "webgpu",
+      "displayName": "WEBGPU \u2014 Despite the name this is a NATIVE renderer; CNA rejects it under Emscripten",
+      "description": "2D3D renderer. Platforms: linux, windows, macos. Dependency: wgpu-native binary release, auto-downloaded.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-webgpu",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "WEBGPU"
+      }
+    },
+    {
+      "name": "metal",
+      "displayName": "METAL \u2014 macOS only",
+      "description": "2D3D renderer. Platforms: macos. Dependency: Apple Metal framework.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-metal",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "METAL"
       },
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
-        "rhs": "Windows"
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "headless",
+      "displayName": "HEADLESS \u2014 No GPU and no window at all",
+      "description": "2D3D renderer. Platforms: linux, windows, macos, android. Dependency: none.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-headless",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "HEADLESS"
+      }
+    },
+    {
+      "name": "software",
+      "displayName": "SOFTWARE \u2014 Real CPU rasterizer",
+      "description": "2D3D renderer. Platforms: linux, windows, macos, android. Dependency: none.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-software",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "SOFTWARE"
+      }
+    },
+    {
+      "name": "stub",
+      "displayName": "STUB \u2014 Deliberate no-op renderer",
+      "description": "2D3D renderer. Platforms: linux, windows, macos, android. Dependency: none.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-stub",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "STUB"
+      }
+    },
+    {
+      "name": "portablegl",
+      "displayName": "PORTABLEGL \u2014 CPU OpenGL 3.x-style pipeline",
+      "description": "2D3D renderer. Platforms: linux, windows, macos. Dependency: PortableGL single header via FetchContent.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-portablegl",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "PORTABLEGL"
+      }
+    },
+    {
+      "name": "blend2d",
+      "displayName": "BLEND2D \u2014 Blend2D CPU vector rasterizer, presented through an SDL texture",
+      "description": "2D renderer. Platforms: linux, windows, macos. Dependency: Blend2D + asmjit via FetchContent.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-blend2d",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "BLEND2D"
+      }
+    },
+    {
+      "name": "web-canvas",
+      "displayName": "CANVAS \u2014 Browser 2D canvas context",
+      "description": "2D renderer. Platforms: web. Dependency: none.",
+      "inherits": "web-base",
+      "binaryDir": "${sourceDir}/build-web-canvas",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "CANVAS"
+      }
+    },
+    {
+      "name": "web-html-dom",
+      "displayName": "HTML_DOM \u2014 Draws sprites as pooled CSS-transformed <div> elements",
+      "description": "2D renderer. Platforms: web. Dependency: none.",
+      "inherits": "web-base",
+      "binaryDir": "${sourceDir}/build-web-html-dom",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "HTML_DOM"
+      }
+    },
+    {
+      "name": "web-svg-dom",
+      "displayName": "SVG_DOM \u2014 Draws sprites as real <svg>/<image> elements",
+      "description": "2D renderer. Platforms: web. Dependency: none.",
+      "inherits": "web-base",
+      "binaryDir": "${sourceDir}/build-web-svg-dom",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "SVG_DOM"
+      }
+    },
+    {
+      "name": "bgfx",
+      "displayName": "BGFX \u2014 bgfx cross-platform renderer",
+      "description": "2D3D renderer. Platforms: linux, windows, macos. Dependency: bgfx via FetchContent (pinned, patched).",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-bgfx",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "BGFX"
+      }
+    },
+    {
+      "name": "sokol",
+      "displayName": "SOKOL \u2014 Adds CNA_SOKOL_API (GLCORE default; only GLCORE is verified upstream)",
+      "description": "2D3D renderer. Platforms: linux, windows, macos. Dependency: sokol single header via FetchContent + system OpenGL.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-sokol",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "SOKOL"
+      }
+    },
+    {
+      "name": "fna3d",
+      "displayName": "FNA3D \u2014 The XNA-shaped C library FNA renders through",
+      "description": "2D3D renderer. Platforms: linux, windows, macos. Dependency: FNA3D + MojoShader via FetchContent; needs Python3.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-fna3d",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "FNA3D"
+      }
+    },
+    {
+      "name": "freedirect",
+      "displayName": "FREEDIRECT \u2014 DirectDraw reimplemented on SDL3, so unlike DIRECTX* it builds on Linux",
+      "description": "2D3D renderer. Platforms: linux, windows, macos. Dependency: sibling ../free-direct.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-freedirect",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "FREEDIRECT"
+      }
+    },
+    {
+      "name": "windows-directx11",
+      "displayName": "DIRECTX11 \u2014 Direct3D 11",
+      "description": "2D3D renderer. Platforms: windows. Dependency: d3d11.h/dxgi.h.",
+      "inherits": "mingw-base",
+      "binaryDir": "${sourceDir}/build-windows-directx11",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "DIRECTX11"
+      }
+    },
+    {
+      "name": "windows-directx12",
+      "displayName": "DIRECTX12 \u2014 Direct3D 12",
+      "description": "2D3D renderer. Platforms: windows. Dependency: d3d12.h/dxgi.h.",
+      "inherits": "mingw-base",
+      "binaryDir": "${sourceDir}/build-windows-directx12",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "DIRECTX12"
       }
     }
   ],
   "buildPresets": [
-    { "name": "sdl-renderer",   "configurePreset": "sdl-renderer",   "targets": ["HelloGame"] },
-    { "name": "easygl",         "configurePreset": "easygl",         "targets": ["HelloGame"] },
-    { "name": "bgfx",           "configurePreset": "bgfx",           "targets": ["HelloGame"] },
-    { "name": "vulkan",         "configurePreset": "vulkan",         "targets": ["HelloGame"] },
-    { "name": "webgpu",         "configurePreset": "webgpu",         "targets": ["HelloGame"] },
-    { "name": "headless",       "configurePreset": "headless",       "targets": ["HelloGame"] },
-    { "name": "software",       "configurePreset": "software",       "targets": ["HelloGame"] },
-    { "name": "web",            "configurePreset": "web",            "targets": ["HelloGame"] },
-    { "name": "windows-vs2022", "configurePreset": "windows-vs2022", "targets": ["HelloGame"], "configuration": "Debug" }
+    {
+      "name": "sdl-renderer",
+      "configurePreset": "sdl-renderer"
+    },
+    {
+      "name": "sdl-gpu",
+      "configurePreset": "sdl-gpu"
+    },
+    {
+      "name": "opengles3",
+      "configurePreset": "opengles3"
+    },
+    {
+      "name": "opengles2",
+      "configurePreset": "opengles2"
+    },
+    {
+      "name": "opengl33",
+      "configurePreset": "opengl33"
+    },
+    {
+      "name": "web-webgl2",
+      "configurePreset": "web-webgl2"
+    },
+    {
+      "name": "web-webgl1",
+      "configurePreset": "web-webgl1"
+    },
+    {
+      "name": "opengl1",
+      "configurePreset": "opengl1"
+    },
+    {
+      "name": "opengl2",
+      "configurePreset": "opengl2"
+    },
+    {
+      "name": "opengl4",
+      "configurePreset": "opengl4"
+    },
+    {
+      "name": "vulkan",
+      "configurePreset": "vulkan"
+    },
+    {
+      "name": "webgpu",
+      "configurePreset": "webgpu"
+    },
+    {
+      "name": "metal",
+      "configurePreset": "metal"
+    },
+    {
+      "name": "headless",
+      "configurePreset": "headless"
+    },
+    {
+      "name": "software",
+      "configurePreset": "software"
+    },
+    {
+      "name": "stub",
+      "configurePreset": "stub"
+    },
+    {
+      "name": "portablegl",
+      "configurePreset": "portablegl"
+    },
+    {
+      "name": "blend2d",
+      "configurePreset": "blend2d"
+    },
+    {
+      "name": "web-canvas",
+      "configurePreset": "web-canvas"
+    },
+    {
+      "name": "web-html-dom",
+      "configurePreset": "web-html-dom"
+    },
+    {
+      "name": "web-svg-dom",
+      "configurePreset": "web-svg-dom"
+    },
+    {
+      "name": "bgfx",
+      "configurePreset": "bgfx"
+    },
+    {
+      "name": "sokol",
+      "configurePreset": "sokol"
+    },
+    {
+      "name": "fna3d",
+      "configurePreset": "fna3d"
+    },
+    {
+      "name": "freedirect",
+      "configurePreset": "freedirect"
+    },
+    {
+      "name": "windows-directx11",
+      "configurePreset": "windows-directx11"
+    },
+    {
+      "name": "windows-directx12",
+      "configurePreset": "windows-directx12"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "sdl-renderer",
+      "configurePreset": "sdl-renderer",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "sdl-gpu",
+      "configurePreset": "sdl-gpu",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "opengles3",
+      "configurePreset": "opengles3",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "opengles2",
+      "configurePreset": "opengles2",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "opengl33",
+      "configurePreset": "opengl33",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "opengl1",
+      "configurePreset": "opengl1",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "opengl2",
+      "configurePreset": "opengl2",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "opengl4",
+      "configurePreset": "opengl4",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "vulkan",
+      "configurePreset": "vulkan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "webgpu",
+      "configurePreset": "webgpu",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "metal",
+      "configurePreset": "metal",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "headless",
+      "configurePreset": "headless",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "headless"
+        }
+      }
+    },
+    {
+      "name": "software",
+      "configurePreset": "software",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "headless"
+        }
+      }
+    },
+    {
+      "name": "stub",
+      "configurePreset": "stub",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "headless"
+        }
+      }
+    },
+    {
+      "name": "portablegl",
+      "configurePreset": "portablegl",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "headless"
+        }
+      }
+    },
+    {
+      "name": "blend2d",
+      "configurePreset": "blend2d",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "bgfx",
+      "configurePreset": "bgfx",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "sokol",
+      "configurePreset": "sokol",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "fna3d",
+      "configurePreset": "fna3d",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "freedirect",
+      "configurePreset": "freedirect",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "windows-directx11",
+      "configurePreset": "windows-directx11",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    },
+    {
+      "name": "windows-directx12",
+      "configurePreset": "windows-directx12",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "display"
+        }
+      }
+    }
   ]
 }

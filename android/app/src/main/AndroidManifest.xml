@@ -2,8 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     android:installLocation="auto">
 
-    <!-- OpenGL ES 2.0, used by the SDL_RENDERER backend (the one forced on Android). -->
-    <uses-feature android:glEsVersion="0x00020000" />
+    <!--
+        Not every renderer needs GLES, and this template no longer forces one on
+        Android (see ../../../../CMakeLists.txt and cmake/renderers.json): the
+        default is CNA's own, SDL_RENDERER, which does not require a GL context
+        on Android either. required="false" so the Play Store does not filter
+        out devices for a feature the selected renderer may not use; raise this
+        to 0x00030000 and drop required="false" if you build with -PcnaRenderer=OPENGLES3.
+    -->
+    <uses-feature android:glEsVersion="0x00020000" android:required="false" />
 
     <uses-feature
         android:name="android.hardware.touchscreen"

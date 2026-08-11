@@ -1,461 +1,428 @@
 # cna-template
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+A starter project for **[CNA](https://github.com/openeggbert/cna)** — a C++
+reimplementation of the XNA 4.0 game framework, built on SDL3 with a pluggable
+renderer layer.
 
-A starter template for building applications on top of **CNA**, a C++
-reimplementation of the XNA 4.0 game framework programming model, built on
-SDL3 with a pluggable graphics backend layer.
+Clone it, pick a renderer, build, and you have a running game loop with content
+loading, sprite drawing and input. Then delete `HelloGame` and write your own.
 
-CNA lives in a sibling repository (default: `../cna` next to this checkout —
-see the [CNA project](https://github.com/openeggbert/cna) for details). If
-your CNA checkout lives somewhere else or under a different name, pass
-`-DCNA_ROOT_DIR=/path/to/cna` to CMake.
+![HelloGame](docs/screenshot.png)
 
-![HelloGame running on the SDL_RENDERER backend](docs/screenshot.png)
-
-## Where this fits
-
-- **`cna-template`** (this repo) — start here for a **new** CNA
-  application/game: a minimal, working skeleton with every platform and
-  backend already wired up.
-- **[`cna-samples`](https://github.com/openeggbert/cna-samples)** — dozens
-  of official XNA 4.0 samples already ported to CNA/C++. The best reference
-  for "how do I do X in CNA" when porting an existing game, or for seeing a
-  wider variety of real CNA usage than this template's single minimal
-  example.
-- **[`mobile-eggbert`](https://github.com/openeggbert/mobile-eggbert)** — a
-  complete, real 2D platformer built on CNA, and this template's own
-  structural model. A useful larger, real-world reference once `HelloGame`
-  isn't enough.
+---
 
 ## Contents
 
+- [What you get](#what-you-get)
 - [Quick start](#quick-start)
-- [Project structure](#project-structure)
-- [What this template includes](#what-this-template-includes)
-- [Making this your own project](#making-this-your-own-project)
 - [Prerequisites](#prerequisites)
+- [Choosing a renderer](#choosing-a-renderer)
+- [Project structure](#project-structure)
+- [Making this your own project](#making-this-your-own-project)
 - [Building](#building)
-- [Windows / Visual Studio](#windows--visual-studio)
-- [Web (Emscripten)](#web-emscripten)
-- [Android](#android)
+  - [Linux](#linux) · [Windows](#windows) · [Web](#web-emscripten) ·
+    [Android](#android) · [macOS](#macos)
+- [Tests](#tests)
+- [Content and assets](#content-and-assets)
 - [Porting a C# XNA 4.0 game](#porting-a-c-xna-40-game)
 - [Troubleshooting](#troubleshooting)
 - [Known upstream issues](#known-upstream-issues)
-- [License](#license)
+
+---
+
+## What you get
+
+- A working `Game` subclass with `LoadContent` / `Update` / `Draw`, texture
+  loading, `SpriteBatch` drawing and keyboard input.
+- A build that works with **any** of CNA's 46 renderers, and refuses invalid
+  renderer/platform combinations with an explanation rather than a link error.
+- Ready-made presets for the common renderers, generated from one manifest.
+- A smoke test that runs in CI with no display at all.
+- Packaging for Linux, Windows, Web and Android.
+
+This is deliberately a *starter*, not a sample gallery. For worked examples of
+specific XNA features, see
+[cna-samples](https://github.com/openeggbert/cna-samples).
+
+---
 
 ## Quick start
 
 ```bash
-cd ..
+# CNA and its dependencies are sibling checkouts, not submodules.
 git clone https://github.com/openeggbert/cna.git
 git clone https://github.com/openeggbert/sharp-runtime.git
+git clone https://github.com/openeggbert/cna-template.git
+
+# CNA vendors SDL as submodules and needs them present.
+git -C cna submodule update --init \
+    third_party/SDL third_party/SDL_image third_party/SDL_mixer third_party/enet
+
 cd cna-template
-cmake --preset sdl-renderer
-cmake --build --preset sdl-renderer
-./cmake-build-sdl-renderer/HelloGame
+cmake --preset headless
+cmake --build --preset headless -j3
+ctest --preset headless
 ```
 
-That's the fastest path to a running window (arrow keys move the sprite,
-Escape quits). See [Prerequisites](#prerequisites) below for what else you
-need for other backends/platforms.
+`headless` needs no GPU, no window and no display server, which makes it the
+fastest way to prove the toolchain works. For something you can actually look
+at, use `sdl-renderer` (most portable) or `opengles3` (CNA's default on Linux —
+also clone `easy-gl` and `meta-gl` first, see below).
+
+---
+
+## Prerequisites
+
+**Always:**
+
+| | |
+| --- | --- |
+| CMake | 3.23 or newer |
+| Compiler | C++23 (GCC 14+, Clang 18+, MSVC 19.38+) |
+| Siblings | `../cna`, `../sharp-runtime` |
+| CNA submodules | `third_party/SDL`, `SDL_image`, `SDL_mixer`, `enet` |
+
+On Linux you also need `pkg-config` and the FFmpeg development packages, which
+CNA's media module requires unconditionally there:
+
+```bash
+sudo apt-get install -y cmake ninja-build pkg-config ccache \
+    libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
+```
+
+**Renderer-dependent extra checkouts** — clone these only if you use the
+renderers that need them:
+
+| Checkout | Needed by |
+| --- | --- |
+| `../easy-gl` **and** `../meta-gl` | `OPENGLES2`, `OPENGLES3`, `OPENGL33`, `WEBGL1`, `WEBGL2` |
+| `../free-direct` | `FREEDIRECT` |
+
+`docs/renderers.md` lists the dependency for every renderer. Nothing else is a
+blanket prerequisite: most renderers need only CNA and sharp-runtime, and
+several fetch what they need at configure time.
+
+CNA builds SDL3 itself, once, into a cache directory outside the build tree, so
+the first configure is slow and later ones are not. You do not need system SDL.
+
+`dependencies.lock` records the exact revisions this template was last audited
+against.
+
+---
+
+## Choosing a renderer
+
+One cache variable selects the renderer, and it is CNA's own:
+
+```bash
+cmake -S . -B build -DCNA_GRAPHICS_RENDERER=OPENGLES3
+```
+
+Set nothing and CNA picks: `WEBGL2` on the web, `OPENGLES3` on Linux,
+`SDL_RENDERER` everywhere else.
+
+Renderers with a preset:
+
+```bash
+cmake --list-presets
+```
+
+Everything else is selected with `-DCNA_GRAPHICS_RENDERER=<NAME>`. All 46 are
+selectable either way — the presets are a convenience, not a whitelist.
+
+**➡ [docs/renderers.md](docs/renderers.md) — the full matrix**: what each
+renderer is, which platforms it runs on, whether it opens a window, whether it
+does 3D, what it depends on, and how far this template's CI exercises it.
+
+A few things worth knowing before you choose:
+
+- Renderers are **not** interchangeable. Eleven are 2D-only and throw on
+  `VertexBuffer`, `DrawUserPrimitives` and depth state.
+- Four open **no window at all** (`HEADLESS`, `SOFTWARE`, `STUB`, `PORTABLEGL`).
+  They need no X server and no GPU, which makes them ideal for CI and servers.
+  `SOFTWARE` and `PORTABLEGL` really do rasterize; they just present nowhere.
+- Ask the device what it supports rather than testing its name:
+
+  ```cpp
+  if (device.SupportsCapability(CNA::GraphicsCapability::ThreeD)) { ... }
+  ```
+
+  `GetGraphicsRendererName()` exists, but for display only.
+
+If you pick a renderer that cannot work where you are building, the configure
+stops and tells you why, what the renderer *does* support, and which renderers
+would work instead.
+
+---
 
 ## Project structure
 
 ```
-CMakeLists.txt          root build script: sibling-CNA path, backend selection, per-platform target setup
-CMakePresets.json        one preset per backend, plus a Windows/Visual Studio preset
-cmake/toolchains/        MinGW-w64 cross-compilation toolchain file
-include/HelloGame/       HelloGame.hpp -- delete/replace with your own game
-src/HelloGame/           HelloGame.cpp, Program.cpp (entry point) -- delete/replace with your own game
-Content/                 game assets (PNG/WAV/OGG/etc. -- never .xnb, see the porting guide below)
-android/                 Gradle project; points at this repo's own CMakeLists.txt
-.github/workflows/       CI: Linux smoke tests plus Windows, Web, and Android builds
-dependencies.lock        CNA dependency revisions exercised by CI
-docs/                    README assets (the screenshot above)
-missing.md               upstream CNA/sharp-runtime/mobile-eggbert issues found while building this template
-plan.md, NEXT.md         this template's own development history/planning notes
+game/include/HelloGame/   your headers
+game/src/                 your sources (HelloGame.cpp, Program.cpp)
+Content/                  assets, copied next to the executable at build time
+cmake/renderers.json      renderer metadata — the one place it lives
+cmake/CnaRenderers.cmake  renderer validation and CNA drift checks
+cmake/toolchains/         MinGW-w64 cross-compilation toolchain
+tools/                    generator for presets and docs/renderers.md
+android/                  Gradle project
+docs/renderers.md         generated renderer matrix
 ```
 
-## What this template includes
+Sources live under `game/` rather than the usual `src/` + `include/` because a
+top-level `src/` or `include/` currently breaks CNA's build — see
+[Known upstream issues](#known-upstream-issues). The build tells you this if you
+recreate them.
 
-This template ships:
+`CMakePresets.json` and `docs/renderers.md` are **generated** from
+`cmake/renderers.json`:
 
-- **CMake wiring for all 7 CNA graphics backends** (`SDL_RENDERER`, `EASYGL`,
-  `BGFX`, `VULKAN`, `WEBGPU`, `HEADLESS`, `SOFTWARE`), selected with one
-  validated CMake option.
-- **`HelloGame`**, a minimal interactive example (`include/HelloGame/`,
-  `src/HelloGame/`) — loads a texture, draws it, and moves it with the arrow
-  keys. Delete/replace it with your own game; that's the point of a
-  template.
-- **Android** and **Web (Emscripten)** build support, in addition to native
-  Linux and Windows.
-- **Visual Studio** support via CMake integration files (see [Windows /
-  Visual Studio](#windows--visual-studio) below).
-- **Continuous integration** that builds the supported platform entry points;
-  Linux also runs the example's headless smoke test.
-- A guide for **porting an existing XNA 4.0 C# game** to this template (see
-  [Porting a C# XNA 4.0 game](#porting-a-c-xna-40-game) below).
+```bash
+python3 tools/gen_renderer_files.py          # regenerate
+python3 tools/gen_renderer_files.py --check  # what CI runs
+```
+
+The generator also cross-checks the manifest against CNA's own canonical
+renderer list, and the build re-checks it twice more at configure time, so this
+template cannot silently fall behind CNA the way it did before.
+
+---
 
 ## Making this your own project
 
-Once `HelloGame` builds and runs, here's what to change to turn this
-template into your own project:
+1. **Rename the executable** — set `CNA_TEMPLATE_APP_NAME` in `CMakeLists.txt`,
+   or pass `-DCNA_TEMPLATE_APP_NAME=MyGame`.
+2. **Rename the class** — rename `game/src/HelloGame.cpp` and
+   `game/include/HelloGame/HelloGame.hpp`, update the `HELLOGAME_SOURCES` entries
+   in `CMakeLists.txt`, and keep the two bookkeeping macros in step:
+   `GetTypeNameHPP()` in the header and `GetTypeNameCPP(MyGame, "MyGame")` at
+   file scope in the `.cpp`. Both are required to compile.
+3. **Replace `Content/logo.png`** with your own assets.
+4. **Change the Android application id** — `android/app/build.gradle`
+   (`applicationId`) and the package in `android/app/src/main/AndroidManifest.xml`.
+5. **Pick your renderers** — set `preset` and `tier` in `cmake/renderers.json`
+   for the ones you care about, then regenerate.
+6. Delete this README and write your own.
 
-- [ ] Rename `HelloGame`: `include/HelloGame/` → `include/YourGame/`,
-  `src/HelloGame/` → `src/YourGame/`, the class itself
-  (`HelloGame.hpp`/`.cpp`), and `_game_target`'s value in `CMakeLists.txt`
-  (currently hardcoded to `HelloGame`).
-- [ ] Replace `Content/logo.png` with your own assets — see
-  [Assets: CNA never reads .xnb](#assets-cna-never-reads-xnb) for supported
-  formats.
-- [ ] Change the window title (`Game::getWindowProperty().setTitleProperty(...)`
-  in your `Game` subclass's constructor — currently `"cna-template -
-  HelloGame"`).
-- [ ] Rename the CMake project itself: `project(CnaTemplate ...)` at the top
-  of `CMakeLists.txt`.
-- [ ] Android: change `namespace`/`applicationId` in
-  `android/app/build.gradle` (currently `org.openeggbert.cnatemplate`),
-  rename `HelloGameActivity`, update `app_name` in
-  `android/app/src/main/res/values/strings.xml`, and replace the launcher
-  icons under `android/app/src/main/res/mipmap-mdpi/`.
-- [ ] Update `LICENSE` (copyright holder/year) and this `README.md` for your
-  own project.
-- [ ] `plan.md`/`NEXT.md`/`missing.md` are this template's own development
-  history, not part of your game — delete them or keep them for reference,
-  your call.
-
-## Prerequisites
-
-- CMake 3.21+
-- A C++23 compiler (GCC/Clang on Linux, MSVC or MinGW-w64 on Windows)
-- The sibling repositories CNA needs: `../cna`, `../sharp-runtime`, and (for
-  the `EASYGL` backend) `../easy-gl`, all cloned next to this repository.
-- Platform-specific tools as needed: Android Studio + NDK for Android,
-  Emscripten (emsdk) for Web.
-
-```bash
-cd ..
-git clone https://github.com/openeggbert/cna.git
-git clone https://github.com/openeggbert/sharp-runtime.git
-git clone https://github.com/openeggbert/easy-gl.git   # only needed for EASYGL
-cd cna-template
-```
-
-CNA itself vendors SDL3/SDL3_image/SDL3_mixer and builds them from source on
-first configure (cached afterwards) — see `../cna/README.md` for details on
-that process and its own prerequisites.
-
-[`dependencies.lock`](dependencies.lock) records the compatible sibling
-revisions used by CI. It is a reproducible baseline, not a restriction: use a
-newer CNA stack when you deliberately need newer framework functionality.
+---
 
 ## Building
 
-Covers Linux, native Windows, and MinGW cross-compilation from Linux — see
-[Web (Emscripten)](#web-emscripten) and [Android](#android) below for those
-two platforms instead.
-
-| Backend | Platforms | 2D/3D | Status in this repo |
-|---|---|---|---|
-| `SDL_RENDERER` | Linux, Windows, Web, Android (forced on the latter two) | 2D only | Verified — builds and runs HelloGame cleanly on Linux |
-| `EASYGL` | Linux, Windows | 2D + 3D | Verified — builds and runs HelloGame cleanly on Linux (CNA's most mature backend) |
-| `BGFX` | Linux, Windows | 2D + 3D | Not built/run in this environment |
-| `VULKAN` | Linux, Windows | 2D + 3D | Not built/run in this environment |
-| `WEBGPU` | Linux, Windows (experimental) | 2D + 3D | Configure-checked only — needs a CNA checkout that defines `cna_backend_graphics_webgpu` |
-| `HEADLESS` | any | no GPU/window at all | Configure-verified. Useful for CI and tests |
-| `SOFTWARE` | any | CPU rasterizer | Configure-verified |
-
-"Verified" means actually built and run (not just compiled) with `SDL_VIDEODRIVER=dummy` / `xvfb-run`, watching for exceptions and correct backend capability logging — see `missing.md` for the bugs that surfaced this way and are now fixed upstream.
-
-Using a CMake preset (see `CMakePresets.json` for the full list —
-`sdl-renderer`, `easygl`, `bgfx`, `vulkan`, `webgpu`, `headless`, `software`):
+### Linux
 
 ```bash
-cmake --preset easygl
-cmake --build --preset easygl
-./cmake-build-easygl/HelloGame
+cmake --preset opengles3
+cmake --build --preset opengles3 -j3
 ```
 
-Or without presets, selecting a backend directly:
+Or without a preset:
 
 ```bash
-cmake -S . -B build -DCNA_GRAPHICS_BACKEND=EASYGL
-cmake --build build --target HelloGame
-./build/HelloGame
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCNA_GRAPHICS_RENDERER=VULKAN
+cmake --build build -j3
 ```
 
-`CNA_GRAPHICS_BACKEND` is the **only** thing you set — it's a single string,
-and CNA keys everything else off it. Allowed values: `SDL_RENDERER`,
-`EASYGL`, `BGFX`, `VULKAN`, `WEBGPU`, `HEADLESS`, `SOFTWARE`. An unknown value
-fails configuration with a clear error rather than silently falling back to
-another backend.
+### Windows
 
-(CNA also exposes `CNA_BACKEND_*` boolean options. You do not need them, and
-this template deliberately never sets them: they're an alternative input path
-that all default to OFF, and CNA only consults them if you explicitly switch
-one ON. Setting the string is enough.)
+**Native (MSVC)** — open the folder in Visual Studio, or:
 
-If your `../cna` checkout is too old to define the backend you asked for —
-`WEBGPU` is the likely one, being newer — configure fails immediately with a
-specific message naming the missing target, rather than a confusing link
-error much later.
+```bat
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCNA_GRAPHICS_RENDERER=SDL_RENDERER
+cmake --build build --config Release
+```
 
-### Tests
+Required runtime DLLs are copied next to the executable automatically.
 
-Native, non-cross-compiled builds register a short headless smoke test
-(`HelloGameSmoke`). It loads the asset, renders three frames, and exits.
-`SDL_RENDERER` can run it under SDL's dummy video driver, no display needed:
+**Cross-compiling from Linux** with the bundled MinGW-w64 toolchain — this is
+also how you build the Windows-only renderers (`DIRECTX1`–`DIRECTX12`,
+`DIRECT2D`, `GDI`, `GLIDE`):
 
 ```bash
-SDL_VIDEODRIVER=dummy ctest --test-dir cmake-build-sdl-renderer --output-on-failure
+cmake --preset windows-directx11
+cmake --build --preset windows-directx11 -j3
 ```
 
-GL-capable backends (`EASYGL`/`BGFX`/`VULKAN`) need a real or virtual display
-instead — the dummy driver cannot create a GL context and the test will fail
-with "OpenGL support is ... not available in current SDL video driver
-(dummy)". Use `xvfb-run` (this is what CI does for every backend, uniformly):
+Several of those need more than a compiler to *run*: `DIRECTX8` and `DIRECTX10`
+are delivered through DXVK, and `GLIDE` needs a 32-bit toolchain plus an
+external `glide3x.dll`. `docs/renderers.md` records this per renderer.
+
+### Web (Emscripten)
+
+Needs the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html)
+active (`source emsdk_env.sh`). The web presets carry the toolchain file, so
+`emcmake` is optional:
 
 ```bash
-xvfb-run -a ctest --test-dir cmake-build-easygl --output-on-failure
+cmake --preset web-webgl2
+cmake --build --preset web-webgl2 -j3
 ```
 
-### MinGW-w64 cross-compilation from Linux
+Produces `HelloGame.html` / `.js` / `.wasm` / `.data`. Serve it over HTTP —
+`file://` will not work:
 
 ```bash
-rm -rf build-windows   # always use a clean build dir when switching toolchains
-cmake -S . -B build-windows \
-  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/mingw-w64.cmake \
-  -DCNA_GRAPHICS_BACKEND=SDL_RENDERER \
-  -DCNA_WINDOWS_DEPENDENCIES_ROOT=/path/to/windows/sdl3/libs
-cmake --build build-windows --target HelloGame
+python3 -m http.server -d build-web-webgl2
 ```
 
-You must provide Windows-target SDL3 package configs (`SDL3`, `SDL3_image`,
-`SDL3_mixer`) via `CNA_WINDOWS_DEPENDENCIES_ROOT` or `CMAKE_PREFIX_PATH`.
+Five renderers target the web: `WEBGL2` (CNA's default), `WEBGL1`, and the three
+DOM renderers `CANVAS`, `HTML_DOM` and `SVG_DOM`, which use no WebGL at all.
+The WebGL version flags are applied **per renderer** — forcing WebGL 2 globally,
+as this template used to, silently breaks `WEBGL1`.
 
-## Windows / Visual Studio
+### Android
 
-Visual Studio support is delivered as **CMake integration files**
-(`CMakePresets.json`'s `windows-vs2022` preset), not a hand-authored
-`.sln`/`.vcxproj`. Visual Studio 2019 16.10+ and 2022 read `CMakePresets.json`
-natively:
-
-1. **File > Open > Folder...** and select the `cna-template` directory.
-2. Visual Studio detects `CMakePresets.json` and offers the `windows-vs2022`
-   configure preset (and the others, cross-platform ones aside — CMake
-   Tools for VS can target them too if you have the right toolchains
-   installed).
-3. Select the `HelloGame` startup item and build/debug as usual (Ctrl+Shift+B / F5).
-
-Equivalently, from a **Developer Command Prompt**:
-
-```powershell
-cmake --preset windows-vs2022
-cmake --build --preset windows-vs2022
-```
-
-This generates the real `.sln`/`.vcxproj` files under `cmake-build-vs2022/`
-on demand — they are not committed, since CMake regenerates them from
-`CMakeLists.txt` and would otherwise go stale. This has not been build-tested
-on this machine (no Visual Studio/MSBuild available in this environment) —
-please verify directly on Windows.
-
-## Web (Emscripten)
-
-```bash
-source /path/to/emsdk/emsdk_env.sh
-emcmake cmake --preset web
-cmake --build --preset web
-emrun cmake-build-web/HelloGame.html
-```
-
-`Content/` is preloaded into the Emscripten virtual filesystem at `/Content`
-(see the `EMSCRIPTEN` branch of `CMakeLists.txt`). Only `SDL_RENDERER` is
-supported on Web (forced automatically). Verified on this machine: configures
-and builds cleanly, produces `HelloGame.html/.js/.wasm/.data`, and the asset
-preload correctly embeds `Content/logo.png` into the output bundle.
-
-## Android
+Needs the Android SDK, NDK and JDK 17.
 
 ```bash
 cd android
-./gradlew assembleDebug
-adb install app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n org.openeggbert.cnatemplate/.HelloGameActivity
-```
-
-The Android project (`android/`) points its CMake `externalNativeBuild` at
-this repository's own root `CMakeLists.txt` and builds `libmain.so`, loaded
-by SDL3's `SDLActivity` Java glue. It uses the same sibling `../cna` default
-as desktop CMake. If CNA is elsewhere, pass its absolute path once and Gradle
-forwards it to both the Java and native build:
-
-```bash
 ./gradlew assembleDebug -PcnaRootDir=/path/to/cna
 ```
 
-Before each Android build, Gradle synchronizes the root `Content/` directory
-into its generated assets directory as `Content/`. This keeps one source of
-truth without a Git symlink, so checkout works reliably on Windows too.
+The APK lands in `android/app/build/outputs/apk/debug/`. Assets from `Content/`
+are packaged automatically. The native library must stay named `main` and the
+entry point must be `SDL_main`, because that is what SDL's Java glue looks for.
 
-Only `SDL_RENDERER` is supported on Android (forced automatically, same as
-Web). The local environment has no Android SDK/NDK; CI assembles a debug APK,
-while installing and running it on a device remains a manual validation step.
+CNA's own documentation currently disagrees with itself about the state of the
+Android cross-build — see [Known upstream issues](#known-upstream-issues).
 
-To build a signed release APK, generate a keystore and `android/key.properties`
-(never commit either — both are gitignored):
+### macOS
 
-```bash
-cd android
-keytool -genkeypair -v -keystore cna-template-release.keystore \
-  -alias cna-template -keyalg RSA -keysize 2048 -validity 10000
-```
+`METAL` is macOS-only, and CNA states plainly that iOS and tvOS are unvalidated.
+Most cross-platform renderers (`SDL_RENDERER`, the GL family, `HEADLESS`,
+`SOFTWARE`, …) also target macOS. None of this was verified on this machine —
+`docs/renderers.md` marks what has actually been tested.
 
-```properties
-# android/key.properties
-storeFile=cna-template-release.keystore
-storePassword=YOUR_STORE_PASSWORD
-keyAlias=cna-template
-keyPassword=YOUR_KEY_PASSWORD
-```
+---
+
+## Tests
+
+The smoke test builds the game, runs it for three frames and exits. It is
+labelled by what it needs from the environment:
 
 ```bash
-./gradlew clean assembleRelease
+ctest --test-dir build -L headless          # no display needed at all
+xvfb-run -a ctest --test-dir build -L display
 ```
+
+or via the preset, which selects the right label for you:
+
+```bash
+ctest --preset headless
+```
+
+Turn it off with `-DCNA_TEMPLATE_BUILD_TESTS=OFF`.
+
+---
+
+## Content and assets
+
+`ContentManager` defaults to a `Content` directory beside the executable, and
+this build copies `Content/` there after every build. Extensions are optional:
+
+```cpp
+auto texture = getContentProperty().Load<Texture2D>("logo");   // Content/logo.png
+```
+
+| Asset | What CNA loads |
+| --- | --- |
+| Textures | `.png`, `.jpg`, `.bmp` and friends via SDL_image — **and real `.xnb`** |
+| Models | `.gltf` / `.glb` directly, or `.cnj` (CNA's own format), or `.xnb` |
+| SpriteFont | `.xnb` fonts from XNA/MonoGame, or a `.cnj` descriptor plus a glyph atlas |
+| Audio | WAV, OGG Vorbis, MP3, FLAC, AIFF, MIDI; XACT `.xgs`/`.xwb`/`.xsb` too |
+| Video | via FFmpeg on Linux/macOS; compiled out on Windows, Android and Web |
+| Effects | the stock effects, or GLSL through a `.cnj` Effect envelope |
+
+**`.xnb` works now.** Earlier versions of this README stated that CNA would
+never read `.xnb` and that you had to extract your assets first. That is wrong:
+CNA ships a full `.xnb` read path including LZX decompression, and
+`ContentManager` probes `<asset>.xnb` before any loose file. Register the
+built-in readers once at startup:
+
+```cpp
+CNA::Internal::Xnb::RegisterAllBuiltInXnbReaders();
+```
+
+What is genuinely *not* supported is **writing** `.xnb` (there is no content
+pipeline — use the loose formats above), and **compiled `.fx` bytecode**, whose
+`Effect` constructor still throws. Custom shaders are written as GLSL and need a
+renderer that reports the `CustomEffects` capability.
+
+---
 
 ## Porting a C# XNA 4.0 game
 
-If you're not writing a new game from scratch but porting an existing XNA
-4.0 C# project, the sibling repository
-[`cna-samples`](https://github.com/openeggbert/cna-samples) — dozens of the
-official Microsoft XNA Game Studio 4.0 samples, ported to CNA/C++ — is the
-best reference for real, working examples of every rule below.
+| C# | C++ / CNA |
+| --- | --- |
+| `namespace Microsoft.Xna.Framework` | `Microsoft::Xna::Framework` |
+| `class Game1 : Game` | `class Game1 : public Microsoft::Xna::Framework::Game` |
+| `obj.Property` | `obj.getPropertyProperty()` / `setPropertyProperty(v)` |
+| `new Foo()` (GC) | value types, or `std::unique_ptr<Foo>` |
+| `override void Draw(GameTime t)` | `void Draw(const GameTime& t) override` |
+| `float`, `int`, `string` | `float`, `System::Int32`, `System::String` |
 
-### Mechanical C#→C++ rules
+Every concrete `Game` subclass needs `GetTypeNameHPP()` in its header and
+`GetTypeNameCPP(Name, "Name")` in its `.cpp`. This is CNA/sharp-runtime
+bookkeeping, not XNA, but it is required to compile.
 
-- **Properties become getter/setter pairs.** CNA has no public fields for
-  XNA properties: a C# `Foo` property becomes `getFooProperty()` /
-  `setFooProperty(value)`. For example:
-  ```csharp
-  // C#
-  graphics.PreferredBackBufferWidth = 800;
-  var width = device.Viewport.Width;
-  ```
-  ```cpp
-  // CNA
-  graphics.setPreferredBackBufferWidthProperty(800);
-  auto width = device.getViewportProperty().getWidthProperty();
-  ```
-- **Every concrete `Game` subclass needs `GetTypeName()` boilerplate.**
-  Declare `GetTypeNameHPP()` inside the class body in your header, and
-  `GetTypeNameCPP(YourClassName, "YourClassName")` at file scope in your
-  `.cpp`. This is CNA/sharp-runtime bookkeeping with no XNA equivalent, but
-  it's required to compile — see `include/HelloGame/HelloGame.hpp` and
-  `src/HelloGame/HelloGame.cpp` for a working example.
-- **Namespaces carry over unchanged**: `Microsoft::Xna::Framework`,
-  `...::Graphics`, `...::Audio`, `...::Input`, `...::Content`, etc. match
-  real XNA/FNA namespaces, so existing API knowledge transfers directly.
-- **No garbage collector.** Object lifetime must be explicit:
-  `std::unique_ptr`, RAII, or (matching some of CNA's own examples) manual
-  `new`/`delete`. `new Foo()` in C# usually becomes a stack value or
-  `std::make_unique<Foo>()` in C++.
-- **Common type mappings**: `List<T>` → `std::vector<T>`, `string` →
-  `std::string`, `foreach` → range-`for`, nullable → `std::optional`,
-  `TimeSpan` → `System::TimeSpan` (from sharp-runtime).
-- **`GraphicsDevice::Clear(const Color&)` is safe on every backend, including
-  `SDL_RENDERER`.** The single-`Color` overload clears target+depth+stencil
-  together to match real XNA/FNA semantics; on the 2D-only `SDL_RENDERER`
-  backend (no depth/stencil buffer at all), CNA now degrades this to a
-  color-only clear instead of throwing (fixed upstream in `../cna`, see
-  `missing.md`). `HelloGame` uses `device.Clear(Color::CornflowerBlue)`
-  directly — no workaround needed.
-- **Never call `device.Present()` in your `Draw()` override.** As in real
-  XNA/FNA, the framework presents for you exactly once per frame, in
-  `Game::EndDraw()`. Calling it yourself too makes SDL present twice per
-  frame; SDL treats the backbuffer as invalid after a present, so the second
-  one pushes undefined content to the screen and **the window visibly
-  flickers on every frame**. Note that CNA's own `README.md` §10 "Usage
-  Example" currently *does* call `device.Present()` — that is a bug in that
-  example (see `missing.md`); every real CNA codebase (`demo_2d`, all 86
-  `cna-samples`, `mobile-eggbert`) correctly does not.
+**Never call `GraphicsDevice::Present()` from `Draw()`.** `Game::EndDraw()`
+already presents exactly once per frame, exactly as real XNA and FNA do.
+Presenting twice makes SDL show an invalid backbuffer and the window flickers
+every frame. CNA's own README still shows this incorrectly — see below.
 
-### Assets: CNA never reads `.xnb`
+[cna-samples](https://github.com/openeggbert/cna-samples) is the best reference
+when you need the CNA equivalent of a specific XNA API.
 
-CNA does not support `.xnb` (the compiled XNA Content Pipeline binary
-format) and is not expected to ever support it — confirmed directly in CNA's
-own `Effect.hpp` (the bytecode-`Effect` constructor always throws
-`NotImplementedException`). You need your original *source* assets (the
-files that existed before the Content Pipeline compiled them into `.xnb`),
-or you need to extract them from `.xnb` using an external tool such as
-MonoGame's `mgcb`/`MonoGame.Content.Builder` — CNA and this template ship no
-XNB reader of any kind.
-
-| XNA asset type | CNA-loadable format |
-|---|---|
-| `Texture2D` | PNG (or anything SDL3_image reads) |
-| `SoundEffect` / `Song` | WAV / OGG |
-| `Model` | glTF or OBJ — `cna-samples/tools/obj2model.py` and `fbx_ascii2model.py` convert to CNA's `.model.json` + binary buffers |
-| `SpriteFont` | CNA's own `.font.json` descriptor + PNG glyph atlas — `cna-samples/tools/make_font.py <ttf> <size_px> <out>` generates both from a TrueType font |
-| `Effect` (compiled `.fx`) | Hand-translated GLSL via CNA's `ShaderEffect` (takes GLSL source strings directly, no file loader built in), or one of CNA's built-in stock effects: `BasicEffect`, `AlphaTestEffect`, `DualTextureEffect`, `EnvironmentMapEffect`, `SkinnedEffect`, `SpriteEffect` |
-
-Loading a texture without `.xnb`, via `ContentManager` (the idiomatic way —
-`ContentManager::RootDirectory` defaults to `"Content"`, and you can omit the
-file extension):
-
-```cpp
-auto texture = getContentProperty().Load<Texture2D>("logo"); // loads Content/logo.png
-```
-
-### Recommended porting workflow
-
-1. Get the original C# XNA source and its *source* assets (not just the
-   `.xnb` output) if at all possible.
-2. Convert assets per the table above.
-3. Port the `Game` subclass mechanically using the rules above — start from
-   `HelloGame` as a working skeleton.
-4. Consult `../cna-samples` for a real, working, already-ported example of
-   whatever XNA API you're unsure about — it's a much better reference than
-   guessing from the XNA docs alone, since it already has the C++/CNA
-   equivalent worked out.
+---
 
 ## Troubleshooting
 
-- **"CNA framework not found at ..."** — CNA is a sibling repository, not a
-  submodule of this one; clone it next to `cna-template` (see
-  [Prerequisites](#prerequisites)) or pass `-DCNA_ROOT_DIR=/path/to/cna`.
-- **"Missing sibling repository 'sharp-runtime'"** — same idea, from CNA's
-  own `CMakeLists.txt`; clone `sharp-runtime` next to `cna`.
-- **"unknown CNA_GRAPHICS_BACKEND"** — pass one of `SDL_RENDERER`, `EASYGL`,
-  `BGFX`, `VULKAN`, `WEBGPU`, `HEADLESS`, `SOFTWARE`. Don't reach for the
-  `CNA_BACKEND_*` booleans — the single string is the whole interface (see
-  [Building](#building)).
-- **"this CNA checkout does not define target `cna_backend_graphics_...`"** —
-  your `../cna` is older than the backend you asked for (most likely
-  `WEBGPU`). Update the CNA checkout, or pick another backend.
-- **Crash or visible flicker on startup** — if you're on an older `../cna`
-  checkout, you may be hitting one of the two startup bugs described in
-  [`missing.md`](missing.md) (both fixed upstream — update your checkout).
-- **MinGW cross-compile fails inside `sharp-runtime/CMakeLists.txt` on
-  `find_package(ZLIB)`** — a known, still-open upstream gap (no MinGW-target
-  zlib vendored by sharp-runtime); see `missing.md` for details. Native
-  Windows (MSVC) builds are unaffected.
-- **Gradle sync fails on Android** — check that the NDK version installed in
-  Android Studio matches `ndkVersion` in `android/app/build.gradle`, that
-  submodules under `../cna/third_party/` are initialized (see
-  `../cna/README.md`), and pass `-PcnaRootDir=/path/to/cna` if CNA is not a
-  sibling checkout.
+**`legacy global 'src/' tree reappeared at the repository root`** — you created a
+top-level `src/` or `include/`. This is an upstream CNA bug; keep your sources
+under `game/`. See below.
+
+**`fatal error: cgltf.h: No such file or directory`** — the same upstream bug in
+a different place. The template works around it; if you hit it in your own
+project, add CNA's `third_party/cgltf` and `third_party/stb` to your include
+path before `add_subdirectory(CNA)`.
+
+**`unknown renderer CNA_GRAPHICS_RENDERER='EASYGL'`** — `EASYGL` was retired as a
+renderer name; it is now the shared implementation behind `OPENGLES2`,
+`OPENGLES3`, `OPENGL33`, `WEBGL1` and `WEBGL2`. Pick one of those.
+
+**`renderer 'X' cannot target Y`** — the renderer is not available on the
+platform you are building for. The message lists what does work.
+
+**`Missing sibling repository 'easy-gl'`** — clone `easy-gl` *and* `meta-gl` next
+to this project, or choose a renderer that does not need them.
+
+**`Could NOT find PkgConfig` / missing `libav*`** — install the FFmpeg
+development packages listed under [Prerequisites](#prerequisites).
+
+**The window flickers every frame** — something is calling `Present()` in
+`Draw()`. Remove it.
+
+**A GL renderer fails under `SDL_VIDEODRIVER=dummy`** — the dummy driver has no
+GL context. Use `xvfb-run`, or pick a renderer whose smoke test is labelled
+`headless`.
+
+---
 
 ## Known upstream issues
 
-Actually building and running (not just compiling) `HelloGame` against CNA
-surfaced a handful of real bugs and gaps in CNA, sharp-runtime, and
-mobile-eggbert (the structural model this template is based on) — startup
-crashes, a visible startup flicker, a CMake scoping question, a MinGW
-cross-compile dependency gap. See [`missing.md`](missing.md) for the full
-write-up: what was found, how it was confirmed, and which of them are
-already fixed upstream vs. still open.
+The blocking one: **CNA uses `CMAKE_SOURCE_DIR` where it means its own root**, in
+`modules/CMakeLists.txt` and `modules/content/CMakeLists.txt`. Because
+`CMAKE_SOURCE_DIR` is the *consumer's* top-level directory when CNA is added with
+`add_subdirectory()`, any project with a conventional `src/` + `include/` layout
+fails to configure, and `cgltf.h` is looked for in the wrong place. This template
+works around both visibly, in its own files.
+
+`missing.md` has the full list — each entry re-verified on 2026-08-11, with
+evidence and the concrete upstream fix, including which previously reported bugs
+are now fixed, obsolete, or were mistaken in the first place.
+
+---
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). CNA, sharp-runtime and the other dependencies
+carry their own licenses.

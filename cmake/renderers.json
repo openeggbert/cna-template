@@ -1,0 +1,360 @@
+{
+  "$comment": [
+    "cna-template renderer manifest — the ONE place template-side renderer metadata lives.",
+    "",
+    "This file does NOT own the list of renderer names. CNA does, in",
+    "cna/cmake/RendererSelection.cmake (the set_property(CACHE CNA_GRAPHICS_RENDERER",
+    "PROPERTY STRINGS ...) line). cmake/CnaRenderers.cmake reads that list out of the",
+    "CNA checkout at configure time and cross-checks it against the names below, so a",
+    "renderer added to CNA cannot silently go missing here — the configure fails with a",
+    "drift error naming the exact renderers that differ.",
+    "",
+    "What this file DOES own is the metadata CNA does not expose programmatically:",
+    "which platforms a renderer is valid on, whether it needs a display to run, what it",
+    "depends on, and how cna-template's presets/CI/docs should treat it.",
+    "",
+    "Fields:",
+    "  platforms   Target platforms on which this renderer is supported. Derived from",
+    "              the gates in cna/cmake/RendererSelection.cmake plus CNA's own",
+    "              support statements. 'linux'|'windows'|'macos'|'web'|'android'.",
+    "  experimental Platforms CNA does not gate but does not support either. The",
+    "              template warns rather than failing, so you can still try them.",
+    "  gate        How CNA enforces it: 'fatal' (hard FATAL_ERROR), 'warn' (builds",
+    "              elsewhere but warns), 'none' (no platform gate at all).",
+    "  category    Renderer family, used to group docs and to pick CI representatives.",
+    "  dimension   '2d' = 2D only, '2d3d' = 2D and 3D.",
+    "  display     'window' = needs a real or virtual display to RUN, 'none' = runs",
+    "              with no display at all (usable as-is in CI).",
+    "  dependency  What it needs beyond CNA + SDL3 + sharp-runtime.",
+    "  tier        cna-template CI tier: 'B' = every PR, 'C' = broad matrix,",
+    "              'D' = scheduled/manual only, 'X' = not runnable on GitHub runners.",
+    "  preset      Whether a named convenience preset is generated for it.",
+    "  webflags    Extra Emscripten link options this renderer needs (web only).",
+    "  notes       Short user-facing note.",
+    "",
+    "Regenerate presets + docs after editing:  python3 tools/gen_renderer_files.py",
+    "Check for drift without writing:          python3 tools/gen_renderer_files.py --check"
+  ],
+
+  "renderers": [
+    {
+      "name": "SDL_RENDERER", "category": "sdl", "dimension": "2d",
+      "platforms": ["linux", "windows", "macos", "android"], "experimental": ["web"],
+      "gate": "none",
+      "display": "window", "dependency": "none", "tier": "B", "preset": true,
+      "notes": "Most portable renderer, and CNA's default off Linux. 2D only: no VertexBuffer/IndexBuffer/depth buffer. CNA documents it as untested on the web -- use WEBGL2 or CANVAS there."
+    },
+    {
+      "name": "SDL_GPU", "category": "sdl", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos"], "gate": "none",
+      "display": "window", "dependency": "system libshaderc", "tier": "C", "preset": true,
+      "notes": "SDL3's own GPU abstraction. Needs libshaderc installed (libshaderc-dev)."
+    },
+
+    {
+      "name": "OPENGLES3", "category": "gl-easygl", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos", "android"], "gate": "fatal",
+      "display": "window", "dependency": "sibling ../easy-gl (which needs ../meta-gl)",
+      "tier": "B", "preset": true,
+      "notes": "CNA's default renderer on Linux. Internally EasyGL."
+    },
+    {
+      "name": "OPENGLES2", "category": "gl-easygl", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos", "android"], "gate": "fatal",
+      "display": "window", "dependency": "sibling ../easy-gl (which needs ../meta-gl)",
+      "tier": "C", "preset": true,
+      "notes": "Internally EasyGL, GLES 2.0 profile. Cannot target the web — use WEBGL1."
+    },
+    {
+      "name": "OPENGL33", "category": "gl-easygl", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos"], "gate": "fatal",
+      "display": "window", "dependency": "sibling ../easy-gl (which needs ../meta-gl)",
+      "tier": "C", "preset": true,
+      "notes": "Internally EasyGL, desktop GL 3.3 core profile."
+    },
+    {
+      "name": "WEBGL2", "category": "gl-easygl", "dimension": "2d3d",
+      "platforms": ["web"], "gate": "fatal",
+      "display": "window", "dependency": "sibling ../easy-gl (which needs ../meta-gl)",
+      "tier": "C", "preset": true,
+      "webflags": ["-sMIN_WEBGL_VERSION=2", "-sMAX_WEBGL_VERSION=2"],
+      "notes": "CNA's default renderer under Emscripten. Internally EasyGL."
+    },
+    {
+      "name": "WEBGL1", "category": "gl-easygl", "dimension": "2d3d",
+      "platforms": ["web"], "gate": "fatal",
+      "display": "window", "dependency": "sibling ../easy-gl (which needs ../meta-gl)",
+      "tier": "C", "preset": true,
+      "webflags": ["-sMIN_WEBGL_VERSION=1", "-sMAX_WEBGL_VERSION=1"],
+      "notes": "WebGL 1 profile. Forcing MAX_WEBGL_VERSION=2 globally would break this."
+    },
+
+    {
+      "name": "OPENGL1", "category": "gl-native", "dimension": "2d3d",
+      "platforms": ["linux", "windows"], "gate": "fatal",
+      "display": "window", "dependency": "system OpenGL", "tier": "C", "preset": true,
+      "notes": "Legacy fixed-function OpenGL 1.x. Desktop Linux/Windows only."
+    },
+    {
+      "name": "OPENGL2", "category": "gl-native", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos"], "gate": "none",
+      "display": "window", "dependency": "system OpenGL", "tier": "C", "preset": true,
+      "notes": "Desktop OpenGL 2.1 compatibility profile, GLSL 1.10. No EasyGL."
+    },
+    {
+      "name": "OPENGL4", "category": "gl-native", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos"], "gate": "none",
+      "display": "window", "dependency": "system OpenGL", "tier": "C", "preset": true,
+      "notes": "Real desktop OpenGL 4.x core profile, independent of EasyGL."
+    },
+    {
+      "name": "OPENGLES1", "category": "gl-native", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "android"], "gate": "none",
+      "display": "window", "dependency": "system GLESv1_CM library + headers",
+      "tier": "C", "preset": false,
+      "notes": "OpenGL ES 1.1 fixed-function. Needs a real GLESv1_CM system library."
+    },
+
+    {
+      "name": "VULKAN", "category": "modern-gpu", "dimension": "2d3d",
+      "platforms": ["linux", "windows"], "experimental": ["android"], "gate": "none",
+      "display": "window", "dependency": "system Vulkan SDK (find_package(Vulkan REQUIRED))",
+      "tier": "C", "preset": true,
+      "notes": "Real 3D via Vulkan. Builds on a CI runner but needs a real or software ICD to run."
+    },
+    {
+      "name": "WEBGPU", "category": "modern-gpu", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos"], "gate": "fatal",
+      "display": "window", "dependency": "wgpu-native binary release, auto-downloaded",
+      "tier": "C", "preset": true,
+      "notes": "Despite the name this is a NATIVE renderer; CNA rejects it under Emscripten."
+    },
+    {
+      "name": "METAL", "category": "modern-gpu", "dimension": "2d3d",
+      "platforms": ["macos"], "gate": "fatal",
+      "display": "window", "dependency": "Apple Metal framework", "tier": "X", "preset": true,
+      "notes": "macOS only. iOS/tvOS explicitly unvalidated upstream."
+    },
+
+    {
+      "name": "HEADLESS", "category": "cpu", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos", "android"], "experimental": ["web"],
+      "gate": "none",
+      "display": "none", "dependency": "none", "tier": "B", "preset": true,
+      "notes": "No GPU and no window at all. The right choice for CI and servers."
+    },
+    {
+      "name": "SOFTWARE", "category": "cpu", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos", "android"], "experimental": ["web"],
+      "gate": "none",
+      "display": "none", "dependency": "none", "tier": "B", "preset": true,
+      "notes": "Real CPU rasterizer. Creates no window and does not link SDL3, so Present() puts nothing on screen -- it is a compute/test renderer, not a display one."
+    },
+    {
+      "name": "STUB", "category": "cpu", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos", "android"], "experimental": ["web"],
+      "gate": "none",
+      "display": "none", "dependency": "none", "tier": "B", "preset": true,
+      "notes": "Deliberate no-op renderer. Draws nothing, touches no GPU or window."
+    },
+    {
+      "name": "PORTABLEGL", "category": "cpu", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos"], "gate": "none",
+      "display": "none", "dependency": "PortableGL single header via FetchContent",
+      "tier": "C", "preset": true,
+      "notes": "CPU OpenGL 3.x-style pipeline. Links no SDL3 and needs no display at all."
+    },
+
+    {
+      "name": "SKIA", "category": "raster-2d", "dimension": "2d",
+      "platforms": ["linux", "windows", "macos"], "gate": "none",
+      "display": "window", "dependency": "a Skia you built yourself (CNA_SKIA_ROOT + CNA_SKIA_BUILD_DIR)",
+      "tier": "D", "preset": false,
+      "notes": "Skia is never fetched: CNA fails configure unless you point it at your own build."
+    },
+    {
+      "name": "BLEND2D", "category": "raster-2d", "dimension": "2d",
+      "platforms": ["linux", "windows", "macos"], "gate": "none",
+      "display": "window", "dependency": "Blend2D + asmjit via FetchContent", "tier": "C", "preset": true,
+      "notes": "Blend2D CPU vector rasterizer, presented through an SDL texture."
+    },
+    {
+      "name": "OPENVG", "category": "raster-2d", "dimension": "2d",
+      "platforms": ["linux", "windows", "macos"], "gate": "fatal",
+      "display": "window", "dependency": "ShivaVG via FetchContent + system OpenGL",
+      "tier": "C", "preset": false,
+      "notes": "OpenVG 1.1 vector graphics on a fixed-function desktop GL context."
+    },
+
+    {
+      "name": "CANVAS", "category": "web-dom", "dimension": "2d",
+      "platforms": ["web"], "gate": "fatal",
+      "display": "window", "dependency": "none", "tier": "C", "preset": true,
+      "webflags": [],
+      "notes": "Browser 2D canvas context. Needs no WebGL at all."
+    },
+    {
+      "name": "HTML_DOM", "category": "web-dom", "dimension": "2d",
+      "platforms": ["web"], "gate": "fatal",
+      "display": "window", "dependency": "none", "tier": "C", "preset": true,
+      "webflags": [],
+      "notes": "Draws sprites as pooled CSS-transformed <div> elements. No WebGL."
+    },
+    {
+      "name": "SVG_DOM", "category": "web-dom", "dimension": "2d",
+      "platforms": ["web"], "gate": "fatal",
+      "display": "window", "dependency": "none", "tier": "C", "preset": true,
+      "webflags": [],
+      "notes": "Draws sprites as real <svg>/<image> elements. No WebGL."
+    },
+
+    {
+      "name": "BGFX", "category": "middleware", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos"], "gate": "warn",
+      "display": "window", "dependency": "bgfx via FetchContent (pinned, patched)",
+      "tier": "C", "preset": true,
+      "notes": "bgfx cross-platform renderer. Primarily tested on Linux upstream."
+    },
+    {
+      "name": "MAGNUM", "category": "middleware", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos"], "gate": "fatal",
+      "display": "window", "dependency": "Corrade + Magnum (system, or via FetchContent)",
+      "tier": "C", "preset": false,
+      "notes": "Desktop GL through Magnum's typed wrappers. Cannot target the web."
+    },
+    {
+      "name": "WICKED", "category": "middleware", "dimension": "2d3d",
+      "platforms": ["linux", "windows"], "gate": "fatal",
+      "display": "window", "dependency": "Wicked Engine (CNA_WICKED_ROOT; auto-fetch is OFF by default)",
+      "tier": "D", "preset": false,
+      "notes": "Dispatches to Vulkan or D3D12. Configure fails unless you supply CNA_WICKED_ROOT."
+    },
+    {
+      "name": "SOKOL", "category": "middleware", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos"], "gate": "none",
+      "display": "window", "dependency": "sokol single header via FetchContent + system OpenGL",
+      "tier": "C", "preset": true,
+      "notes": "Adds CNA_SOKOL_API (GLCORE default; only GLCORE is verified upstream)."
+    },
+    {
+      "name": "DILIGENT", "category": "middleware", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos"], "gate": "none",
+      "display": "window", "dependency": "DiligentCore via FetchContent", "tier": "D", "preset": false,
+      "notes": "Diligent picks D3D11/D3D12/Vulkan/GL/Metal at runtime."
+    },
+    {
+      "name": "LLGL", "category": "middleware", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos"], "gate": "none",
+      "display": "window", "dependency": "LLGL via FetchContent + system libshaderc",
+      "tier": "D", "preset": false,
+      "notes": "LLGL picks OpenGL or Vulkan at runtime. Needs libshaderc installed."
+    },
+    {
+      "name": "FNA3D", "category": "middleware", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos"], "gate": "none",
+      "display": "window", "dependency": "FNA3D + MojoShader via FetchContent; needs Python3",
+      "tier": "C", "preset": true,
+      "notes": "The XNA-shaped C library FNA renders through. Picks SDL_GPU/D3D11/GL at runtime."
+    },
+
+    {
+      "name": "FREEDIRECT", "category": "legacy-api", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos"], "gate": "none",
+      "display": "window", "dependency": "sibling ../free-direct", "tier": "C", "preset": true,
+      "notes": "DirectDraw reimplemented on SDL3, so unlike DIRECTX* it builds on Linux."
+    },
+    {
+      "name": "GDI", "category": "legacy-api", "dimension": "2d",
+      "platforms": ["windows"], "gate": "fatal",
+      "display": "window", "dependency": "Win32 GDI", "tier": "X", "preset": false,
+      "notes": "Classic Win32 GDI, 2D only."
+    },
+    {
+      "name": "GLIDE", "category": "legacy-api", "dimension": "2d3d",
+      "platforms": ["windows"], "gate": "fatal",
+      "display": "window", "dependency": "external glide3x.dll at runtime; 32-bit only",
+      "tier": "X", "preset": false,
+      "notes": "3dfx Glide 3.x. Requires a 32-bit (i686) Windows toolchain."
+    },
+
+    {
+      "name": "DIRECT2D", "category": "directx", "dimension": "2d",
+      "platforms": ["windows"], "gate": "fatal",
+      "display": "window", "dependency": "Direct2D 1.1", "tier": "X", "preset": false,
+      "notes": "Direct2D 1.1, 2D only."
+    },
+    {
+      "name": "DIRECTX11", "category": "directx", "dimension": "2d3d",
+      "platforms": ["windows"], "gate": "fatal",
+      "display": "window", "dependency": "d3d11.h/dxgi.h", "tier": "X", "preset": true,
+      "notes": "Direct3D 11."
+    },
+    {
+      "name": "DIRECTX12", "category": "directx", "dimension": "2d3d",
+      "platforms": ["windows"], "gate": "fatal",
+      "display": "window", "dependency": "d3d12.h/dxgi.h", "tier": "X", "preset": true,
+      "notes": "Direct3D 12."
+    },
+    {
+      "name": "DIRECTX10", "category": "directx", "dimension": "2d3d",
+      "platforms": ["windows"], "gate": "fatal",
+      "display": "window", "dependency": "d3d10 (delivered via Wine + DXVK d3d10core when cross-testing)",
+      "tier": "X", "preset": false,
+      "notes": "Direct3D 10. Shader-only pipeline: every draw needs real HLSL vs_4_0/ps_4_0."
+    },
+    {
+      "name": "DIRECTX9", "category": "directx", "dimension": "2d3d",
+      "platforms": ["windows"], "gate": "fatal",
+      "display": "window", "dependency": "d3d9.h", "tier": "X", "preset": false,
+      "notes": "Direct3D 9."
+    },
+    {
+      "name": "DIRECTX8", "category": "directx", "dimension": "2d3d",
+      "platforms": ["windows"], "gate": "fatal",
+      "display": "window", "dependency": "DXVK d3d8 import library via CNA_DX8_DXVK_LIB (mingw-w64 ships none)",
+      "tier": "X", "preset": false,
+      "notes": "Direct3D 8, fixed-function only. DirectDraw no longer exists at this era."
+    },
+    {
+      "name": "DIRECTX7", "category": "directx", "dimension": "2d3d",
+      "platforms": ["windows"], "gate": "fatal",
+      "display": "window", "dependency": "ddraw.h (IDirectDraw7) + d3d.h (IDirect3D7)",
+      "tier": "X", "preset": false,
+      "notes": "DirectDraw 7 + Direct3D 7. Viewport objects removed at this era."
+    },
+    {
+      "name": "DIRECTX6", "category": "directx", "dimension": "2d3d",
+      "platforms": ["windows"], "gate": "fatal",
+      "display": "window", "dependency": "ddraw.h (IDirectDraw4) + d3d.h (IDirect3D3)",
+      "tier": "X", "preset": false,
+      "notes": "Same interfaces as DIRECTX5; adds real stencil buffer operations."
+    },
+    {
+      "name": "DIRECTX5", "category": "directx", "dimension": "2d3d",
+      "platforms": ["windows"], "gate": "fatal",
+      "display": "window", "dependency": "ddraw.h (IDirectDraw4) + d3d.h (IDirect3D3)",
+      "tier": "X", "preset": false,
+      "notes": "First era with no execute buffers: FVF DrawPrimitive only."
+    },
+    {
+      "name": "DIRECTX3", "category": "directx", "dimension": "2d3d",
+      "platforms": ["windows"], "gate": "fatal",
+      "display": "window", "dependency": "ddraw.h (IDirectDraw2) + d3d.h (IDirect3D2)",
+      "tier": "X", "preset": false,
+      "notes": "Real DirectX 3. Not to be confused with FREEDIRECT, which once held this name."
+    },
+    {
+      "name": "DIRECTX2", "category": "directx", "dimension": "2d3d",
+      "platforms": ["windows"], "gate": "fatal",
+      "display": "window", "dependency": "ddraw.h (IDirectDraw v1) + d3d.h (IDirect3D2)",
+      "tier": "X", "preset": false,
+      "notes": "DirectDraw v1 + Direct3D v2 DrawPrimitive."
+    },
+    {
+      "name": "DIRECTX1", "category": "directx", "dimension": "2d",
+      "platforms": ["windows"], "gate": "fatal",
+      "display": "window", "dependency": "ddraw.h (IDirectDraw v1 only)", "tier": "X", "preset": false,
+      "notes": "Real DirectDraw v1. No Direct3D at this era."
+    }
+  ]
+}
