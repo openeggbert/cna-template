@@ -242,6 +242,16 @@ cmake --preset windows-directx11
 cmake --build --preset windows-directx11 -j3
 ```
 
+`CNA_WINDOWS_DEPENDENCIES_ROOT=/path/to/mingw-prefix` remains available for a
+renderer or game that needs extra Windows-target packages. The base template
+does not need a target zlib: it selects CNA's actual Sharp Runtime component
+closure instead of the default all-components build. If your own code adds
+`SharpRuntime::IO.Compression`, provide a target zlib in the usual way.
+
+The resulting directory is self-contained: CNA's SDL DLLs and the dynamic
+MinGW C++ runtime are copied next to the executable. The C++ runtime must stay
+dynamic because MinGW's static libstdc++ cannot link CNA's full RTTI graph.
+
 Several of those need more than a compiler to *run*: `DIRECTX8` and `DIRECTX10`
 are delivered through DXVK, and `GLIDE` needs a 32-bit toolchain plus an
 external `glide3x.dll`. `docs/renderers.md` records this per renderer.

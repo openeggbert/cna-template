@@ -131,16 +131,85 @@ before.
 unknown-value `FATAL_ERROR` both name `D3D11`. Anyone following the error message
 picks a value that is then rejected.
 
-### SHARP-RUNTIME-1 — unconditional `find_package(ZLIB REQUIRED)` on a MinGW cross-build
+### CNA-7 — ancillary targets still link the legacy `SHARP_RUNTIME` umbrella
+
+The modular sharp-runtime creates the compatibility target `SHARP_RUNTIME`
+only when component `All` is selected
+(`sharp-runtime/cmake/SharpRuntimeComponents.cmake:337-365`). CNA's framework
+modules correctly use `cna_link_sharp_runtime()` and component targets, but
+`cmake/ToolGltfToCnj.cmake:11-15` still links the old name directly. The tool is
+built unconditionally. `Harnesses.cmake` and `UnitTests.cmake` contain more of
+the same pattern behind disabled template options.
+
+Once this template selected CNA's narrow component closure, a full Emscripten
+build therefore reached the final tool link and failed with:
+
+```text
+wasm-ld: error: unable to find library -lSHARP_RUNTIME
+```
+
+**Fix upstream:** migrate these targets to `cna_link_sharp_runtime()` or the
+specific `SharpRuntime::<Component>` targets they consume.
+
+**What this template does meanwhile:** after CNA creates the selected component
+targets, it supplies a compatibility `SHARP_RUNTIME` INTERFACE target over
+CNA's own default component list. This preserves every legacy CNA tool without
+re-enabling `All`.
+
+### CNA-8 — CANVAS did not follow the `CreateRenderTargetCube` interface change
+
+`IGraphicsRenderer::CreateRenderTargetCube()` now takes five arguments; the new
+third argument is `preserveContents`
+(`modules/graphics/include/CNA/Internal/Renderers/Common/IGraphicsRenderer.hpp:1482`).
+The pinned CANVAS renderer still declares and defines the old four-argument
+method:
+
+- `modules/renderers/canvas/include/CNA/Internal/Renderers/Canvas/CanvasRenderer.hpp:112-114`
+- `modules/renderers/canvas/src/CanvasRenderer.cpp:361-362`
+
+Clang correctly rejects the header because a non-overriding overload is marked
+`override`. This made the CI representative CANVAS build impossible before any
+application source was linked.
+
+**Fix upstream:** insert `bool preserveContents` in the CANVAS declaration and
+definition, matching every updated renderer. CANVAS does not retain cube-target
+content, so the implementation may intentionally leave it unnamed/unused.
+
+**What this template does meanwhile:** only for an Emscripten CANVAS build, it
+verifies both exact stale signatures, derives corrected copies under the build
+tree, and compiles the renderer against an overlay header. It never edits CNA's
+checkout. Every textual replacement and source-list assumption is guarded by a
+fatal error so the workaround cannot silently survive an upstream source
+change.
+
+### CNA-9 — vendored SDL's persistent cache defaults inside the source checkout
+
+`cmake/ThirdPartySDL.cmake:20-31` chooses
+`${CMAKE_CURRENT_SOURCE_DIR}/.sdl-prebuilt-<target>` and then configures, builds
+and installs SDL there during the parent CMake configure. This fails when CNA is
+consumed from a read-only checkout even though both the consumer source and
+binary directories are writable.
+
+`CNA_SDL_PREBUILT_ROOT` is a working escape hatch. The local web verification
+used a persistent writable directory under `cna-template/build/` and both web
+renderers shared it. The template now makes that its default for every target,
+while preserving an explicit caller value. Upstream should default to a user
+cache or binary-tree location, or at least detect a non-writable CNA source and
+choose one, while retaining the explicit cache override.
+
+### SHARP-RUNTIME-1 — default `All` selection pulls zlib into every CNA consumer
 
 Previously filed against `sharp-runtime/CMakeLists.txt:5`; that line no longer
 exists. After modularization the same call is at
-`sharp-runtime/modules/io-compression/CMakeLists.txt:5`, and it is still reached
-on every build, because components default to `All`
-(`sharp-runtime/CMakeLists.txt:49-53`) and CNA never narrows
-`SHARP_RUNTIME_COMPONENTS`.
+`sharp-runtime/modules/io-compression/CMakeLists.txt:5`. It is correctly scoped
+to `IO.Compression`, but sharp-runtime defaults to component `All`
+(`sharp-runtime/CMakeLists.txt:49-53`) and CNA sets its actual component needs
+only *after* `add_subdirectory(sharp-runtime)`. Every embedded CNA consumer
+therefore reaches `find_package(ZLIB REQUIRED)` unless it anticipates CNA's
+needs before adding CNA.
 
-**Status: reproduced live in this audit.** Cross-compile probe:
+**Status: reproduced, then resolved at the consumer integration seam.** The raw
+failing probe was:
 
 ```bash
 cmake -S . -B build-probe --toolchain cmake/toolchains/mingw-w64.cmake \
@@ -151,16 +220,49 @@ fails with `Could NOT find ZLIB (missing: ZLIB_LIBRARY) (found version "1.3.1")`
 from `sharp-runtime/modules/io-compression/CMakeLists.txt:5`, because
 `find_package(ZLIB)` resolves the *host's* `zlib.h` (version string) but not a
 MinGW-targeted `.a`, and `CMAKE_FIND_ROOT_PATH` in
-`cna/cmake/toolchains/mingw-w64.cmake` does not point at one. A MinGW zlib
-(`libz.a`) exists elsewhere on this machine outside any path the toolchain
-searches, which is what let the version probe half-succeed and produced the
-confusing "found version 1.3.1" in an otherwise-failing message.
+`cna-template/cmake/toolchains/mingw-w64.cmake` does not invent a dependency
+prefix. Debian's installed `libz-mingw-w64` package contains runtime DLLs only,
+not a development import/static archive. That lets the host header half-satisfy
+the version probe and produces the confusing "found version 1.3.1" in an
+otherwise-failing message.
 
-Not fixed here: installing a system package or exporting `CMAKE_PREFIX_PATH`
-would make it configure, but that changes host state rather than the template,
-and the underlying issue — `sharp-runtime` pulling in `io-compression`
-unconditionally instead of CNA declaring only the components it needs via
-`SHARP_RUNTIME_COMPONENTS` — is upstream's to fix.
+Supplying a previously built Windows-target zlib proved that no later compiler
+blocker was hidden behind the configure failure, but it was not the final
+solution. The template now includes CNA's own
+`cmake/SharpRuntimeConsumption.cmake` before `add_subdirectory(CNA)` and places
+its `CNA_SHARP_RUNTIME_DEFAULT_COMPONENTS` into
+`SHARP_RUNTIME_COMPONENTS`—only when the application has not made an explicit
+selection. The final clean-cache-equivalent command needed no prefix:
+
+```bash
+cmake -S . -B build-probe --toolchain cmake/toolchains/mingw-w64.cmake \
+    -DCNA_GRAPHICS_RENDERER=SDL_RENDERER
+cmake --build build-probe --parallel 3
+```
+
+That configured without any ZLIB cache entry, compiled all 435 steps and linked
+`HelloGame.exe`. The same selection reduced and unblocked both Emscripten
+builds. This is still an upstream ordering issue: CNA already owns the right
+list, but must apply it before adding sharp-runtime. Once it does, the template
+preload can be removed.
+
+### SHARP-RUNTIME-2 — Emscripten rejects an unused native-only helper
+
+`modules/io/src/System/IO/RandomAccess.cpp:91-93` defines `NativeDetail()` and
+`ThrowNative()` outside the platform branches. Every use of `ThrowNative()` is
+inside `_WIN32` or POSIX branches; Emscripten's branches throw
+`PlatformNotSupportedException` directly. Clang therefore reports
+`ThrowNative` as unused, and the component's own `-Werror` promotes it to a
+build failure.
+
+**Fix upstream:** guard the native helpers with `#if !defined(__EMSCRIPTEN__)`
+or mark the intentionally unavailable helper `[[maybe_unused]]`.
+
+**What this template does meanwhile:** append
+`-Wno-error=unused-function` to this one source in target `sharp_runtime_io` on
+Emscripten. The warning remains visible; only its promotion to an error is
+disabled. No warning policy is weakened for the application, CNA, or any other
+Sharp Runtime source.
 
 ### MOBILE-EGGBERT-1 — stray `include_directories(... CNA)`
 
@@ -206,8 +308,13 @@ CMake functions are global once defined, so everything CNA `include()`s is
 callable from the parent scope after `add_subdirectory()`.
 `cna_copy_sdl_runtime()` (`cmake/ThirdPartySDL.cmake:323`),
 `cna_copy_mingw_runtime()` (`:241`) and `cna_copy_mingw_cxx_runtime()` (`:290`)
-all work; `cna-samples` relies on exactly that. The template now calls
-`cna_copy_sdl_runtime()` on Windows, with a `TARGET_RUNTIME_DLLS` fallback.
+are callable; `cna-samples` relies on exactly that. There is one important
+scope detail: the helper can copy only imported targets visible in the caller's
+directory. CNA creates `SDL3`, `SDL3_image` and `SDL3_mixer` inside its own
+subdirectory, so the template must re-run all three `find_package()` calls in
+the parent scope before invoking the helper. Re-importing only SDL3 was proven
+insufficient: `HelloGame.exe` imported `SDL3_image.dll` and `SDL3_mixer.dll`,
+but neither was packaged. The template now re-imports and copies all three.
 
 The old entry's *stated reason* ("functions defined via `include()` while CNA is
 processed as our subdirectory are not visible back in this top-level scope") was
@@ -216,14 +323,18 @@ now corrected.
 
 ---
 
-## Not re-verified in this audit
+## Not runtime-verified in this audit
 
 Listed so the next session does not mistake silence for a passing result:
 
-- The MinGW cross-build (`SHARP-RUNTIME-1`) was not executed.
 - The Android build was not executed: no Android SDK/NDK on this machine. CNA's
   own docs disagree with each other about its current state —
   `cna/docs/android-graphics-limitations.md:24-50` reports the NDK cross-compile
   failing inside sharp-runtime, while `cna/docs/devices-build.md:270-386` records
   an APK that built and ran on an emulator on 2026-07-05.
-- The Emscripten build was not executed: no emsdk on this machine.
+- Emscripten 4.0.7 compiled and linked complete `WEBGL2` and `CANVAS` bundles,
+  but no browser was available to this Codex session, so page startup and frame
+  rendering were not observed. CI's pinned Emscripten 6.0.3 was not available
+  locally either.
+- The MinGW `HelloGame.exe` and its PE dependency package were inspected but
+  not executed on Windows or under Wine.

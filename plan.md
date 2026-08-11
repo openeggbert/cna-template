@@ -43,9 +43,11 @@ applies.
 ### No renderer-name branching in application code or CMake
 
 `CMakeLists.txt` has zero `if(CNA_GRAPHICS_RENDERER STREQUAL ...)` branches for
-behavior. Renderer-specific facts it needs (display requirement, web link
-flags, whether the renderer is in the GL family) come from
-`cna_template_renderer_field()` reading the manifest.
+application behavior. Renderer-specific facts it needs (display requirement,
+web link flags, whether the renderer is in the GL family) come from
+`cna_template_renderer_field()` reading the manifest. The guarded CANVAS check
+is a temporary source-compatibility patch for the pinned CNA defect CNA-8, not
+a renderer architecture decision; it must disappear with the upstream fix.
 
 `HelloGame` similarly avoids `#ifdef CNA_RENDERER_*` or name checks. It queries
 `GraphicsDevice::SupportsCapability(CNA::GraphicsCapability::X)` and probes
@@ -58,9 +60,11 @@ CNA's `modules/CMakeLists.txt` defines `CNA` as an INTERFACE library that
 already links every framework module, the resolved renderer target, and the
 public compile definitions. The old template manually resolved a renderer
 target name (`cna_backend_graphics_<lowercase>`) and wrapped it in a linker
-group. Both are gone: `target_link_libraries(${_app} PRIVATE CNA
-SHARP_RUNTIME)` is the entire link line, matching the pattern CNA's own
-examples use.
+group. Both are gone: `target_link_libraries(${_app} PRIVATE CNA)` is the
+entire application link line. CNA's umbrella carries its exact Sharp Runtime
+component closure transitively; the template also exposes a narrow legacy
+`SHARP_RUNTIME` bridge solely for upstream CNA tools that have not migrated to
+component targets yet.
 
 ### Diagnostics teach, not just reject
 
@@ -122,3 +126,42 @@ This pass:
 The next time CNA's renderer count changes, the intended procedure is the four
 steps in `CLAUDE.md`'s "When CNA gains or loses a renderer" section — not
 another audit of this scope.
+
+### 2026-08-11 — cross-platform completion verification
+
+The initially blocked MinGW and Emscripten builds showed that CNA's component
+selection has to happen before CNA adds sharp-runtime. The template now reads
+CNA's own `CNA_SHARP_RUNTIME_DEFAULT_COMPONENTS` list at that seam. This avoids
+duplicating upstream component knowledge and removes unused optional
+dependencies such as zlib from all three verified targets.
+
+The complete `SDL_RENDERER` MinGW cross-build then found two packaging defects
+that configure-only testing could not expose:
+
+- Static libstdc++ cannot link CNA's full RTTI graph under MinGW PE-COFF. The
+  template now uses CNA's `cna_copy_mingw_cxx_runtime()` helper and deploys the
+  dynamic compiler runtime instead.
+- Imported CMake targets are directory-scoped. Re-importing only `SDL3` in the
+  consumer scope let `cna_copy_sdl_runtime()` omit `SDL3_image.dll` and
+  `SDL3_mixer.dll`; all three SDL packages are now re-imported before copying.
+
+The final `HelloGame.exe` builds without a target zlib and imports only Windows
+system DLLs plus the SDL and dynamic GCC/C++ runtimes. Six deployable runtime
+DLLs are copied beside it; CNA's helper includes `libwinpthread-1.dll`
+conservatively even though the current recursive PE import closure does not
+reference it.
+
+Emscripten 4.0.7 completed both CI representatives, `WEBGL2` and `CANVAS`.
+WEBGL2's link carries exact WebGL 2 minimum/maximum flags; CANVAS carries
+neither. Those builds also exposed three narrowly documented upstream gaps: an
+unused native helper promoted to an error in sharp-runtime, CNA tools still
+linking the legacy all-components target, and CANVAS missing a newly added
+`preserveContents` method parameter. Compatibility code is guarded against the
+exact pinned source shape so an upstream fix fails visibly and can be removed.
+The generated bundles were not browser-run because no browser instance was
+available to this session.
+
+The same pass moved CNA's configure-time SDL cache default out of the CNA
+checkout and into the template's ignored, target-keyed `build/` area. Explicit
+`CNA_SDL_PREBUILT_ROOT` values still win. This keeps immutable sibling
+checkouts usable and lets all web presets share one Emscripten SDL build.

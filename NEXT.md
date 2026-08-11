@@ -42,11 +42,14 @@ document.
   after `add_subdirectory` (authoritative, catches drift the textual parse could
   miss). Both directions of drift — CNA has a renderer the manifest doesn't, or
   the reverse — are a `FATAL_ERROR` naming the exact difference.
-- **`CMakeLists.txt`** is renderer-count-agnostic: no per-renderer
-  `if/elseif`. It links only `CNA SHARP_RUNTIME` (the old
+- **`CMakeLists.txt`** is renderer-count-agnostic: no per-renderer application
+  link branch. It links only `CNA` (the old
   `-Wl,--start-group ... cna_backend_graphics_<x> ... --end-group` is gone —
   `CNA` is an INTERFACE umbrella that already carries the selected renderer
-  target, and a linker group around an INTERFACE library expands to nothing).
+  and Sharp Runtime component targets, and a linker group around an INTERFACE
+  library expands to nothing). The one renderer-name check is a guarded,
+  temporary compatibility patch for CNA's stale CANVAS method signature
+  (`missing.md`, CNA-8), not application behavior.
 - **`tools/gen_renderer_files.py`** generates `CMakePresets.json` and
   `docs/renderers.md` from the manifest, and doubles as the CI structure check
   (`--check`) and the CI matrix source (`--ci-matrix <platform> --tiers <b,c>`).
@@ -59,6 +62,17 @@ document.
 - **`.github/workflows/ci.yml`** is tiered (structure / core / broad / platform)
   instead of one flat matrix, and the renderer lists in it come from the
   manifest via `--ci-matrix`, not from hand-typed YAML.
+- **MinGW packaging was completed in the follow-up verification.** The
+  application uses CNA's dynamic C++ runtime helper because static libstdc++
+  fails on CNA's RTTI graph, and all three SDL packages are re-imported in the
+  caller scope so `SDL3.dll`, `SDL3_image.dll` and `SDL3_mixer.dll` are copied.
+- **The CI web pair was built locally with Emscripten 4.0.7.** Both `WEBGL2`
+  and `CANVAS` produced HTML/JS/Wasm/data bundles; WEBGL2 carried its WebGL 2
+  constraints and CANVAS correctly carried none. Upstream integration gaps
+  found by those full builds are recorded in `missing.md` and narrowly bridged
+  by the template. CNA's SDL prebuild cache is redirected into the template's
+  ignored `build/` area, so a read-only CNA checkout now works and all web
+  presets reuse the same Emscripten SDL artifacts.
 - Sources moved from top-level `src/` + `include/` to `game/src` +
   `game/include` — forced by a real upstream bug, not a style choice. See
   `missing.md` CNA-1.
@@ -70,37 +84,38 @@ Canonical renderers: **46**.
 | Stage | Attempted | Passed | Notes |
 | --- | --- | --- | --- |
 | Configure (valid, this platform) | 19 | 19 | `SDL_RENDERER, HEADLESS, SOFTWARE, STUB, VULKAN, OPENGL1, OPENGL2, OPENGL4, OPENGLES1, OPENGLES3, OPENGLES2, OPENGL33, FREEDIRECT, SDL_GPU, PORTABLEGL, SOKOL, OPENVG, BLEND2D, FNA3D` |
-| Configure (deliberately invalid) | 12 | 12 rejected correctly | `DIRECTX11, DIRECTX1, DIRECT2D, GLIDE, GDI, METAL` (Windows/macOS-only on Linux); `CANVAS, HTML_DOM, SVG_DOM, WEBGL1, WEBGL2` (web-only on Linux); `BOGUS_NAME, EASYGL` (unknown name, with a migration hint for EASYGL) |
-| Build + smoke run | 5 | 5 | `STUB, SOFTWARE, PORTABLEGL` (windowless, ran natively); `SDL_RENDERER` (ran under `SDL_VIDEODRIVER=dummy`); `OPENGLES3` (built; not run — no Xvfb on this host) |
-| MinGW cross-compile (Windows target, from Linux) | 1 | 0 | `SDL_RENDERER` — configure fails on an upstream `sharp-runtime` ZLIB gap (`missing.md`, SHARP-RUNTIME-1), reproduced live this session, not a template bug |
-| Web (Emscripten) | 0 | — | not attempted: no emsdk on this host |
+| Configure (deliberately invalid) | 13 | 13 rejected correctly | `DIRECTX11, DIRECTX1, DIRECT2D, GLIDE, GDI, METAL` (Windows/macOS-only on Linux); `CANVAS, HTML_DOM, SVG_DOM, WEBGL1, WEBGL2` (web-only on Linux); `BOGUS_NAME, EASYGL` (unknown name, with a migration hint for EASYGL) |
+| Native build (smoke where feasible) | 5 | 5 | `STUB, SOFTWARE, PORTABLEGL` (windowless, built and ran); `SDL_RENDERER` (built and ran under `SDL_VIDEODRIVER=dummy`); `OPENGLES3` (built; not run — no Xvfb on this host) |
+| MinGW cross-compile (Windows target, from Linux) | 1 | 1 | `SDL_RENDERER` — configured without an external zlib prefix, compiled all 435 steps and linked `HelloGame.exe`; PE imports verified against the six packaged SDL/MinGW runtime DLLs; executable not run |
+| Web (Emscripten 4.0.7) | 2 | 2 | `WEBGL2`, `CANVAS` — complete builds, all four deployable artifacts verified; browser runtime not run because no browser was attached to this session |
 | Android (Gradle/NDK) | 0 | — | not attempted: no Android SDK/NDK on this host |
 | Native Windows (MSVC) | 0 | — | not attempted: no Windows host available |
 | macOS | 0 | — | not attempted: no macOS host available |
-| Renderers never attempted (build blocked on missing deps not installed on this host, out of scope to install for a template audit) | 23 | — | `BGFX, WEBGPU, MAGNUM, SKIA, WICKED, DILIGENT, LLGL, GLIDE (needs 32-bit), GDI, DIRECT2D, DIRECTX1/2/3/5/6/7/8/9/10/11/12, METAL, CANVAS, HTML_DOM, SVG_DOM, WEBGL1, WEBGL2` — all are configure-gated correctly (see the platform-rejection tests above for the Windows/web/macOS-only ones), just not build-tested for real |
+| Renderer builds still not attempted | 25 | — | `BGFX, WEBGPU, MAGNUM, SKIA, WICKED, DILIGENT, LLGL, GLIDE (needs 32-bit), GDI, DIRECT2D, DIRECTX1/2/3/5/6/7/8/9/10/11/12, METAL, HTML_DOM, SVG_DOM, WEBGL1` — all are configure-gated correctly; these need another dependency/platform or are outside the representative web pair |
 
-Every renderer in the 46 falls into exactly one of: configure-tested on this
-host, deliberately platform-rejected on this host (verified), or genuinely
-out of reach of this host (documented, not silently skipped).
+Every renderer in the 46 is covered by the native configure audit, a deliberate
+platform rejection, or a real cross-platform build; unbuilt combinations are
+listed rather than implied to pass.
 
 ## Remaining unverified — be explicit, do not assume
 
-- **Web build.** Never run: no emsdk here. `docs/renderers.md`'s Web rows and
-  the CI web job (`WEBGL2`, `CANVAS`) are unverified in this session; they
-  encode what the platform audit established from CNA's source, not a build
-  that actually ran.
+- **Web runtime.** `WEBGL2` and `CANVAS` both compile and link, but the generated
+  pages were not started in a browser because this Codex session exposed no
+  browser instance. CI currently pins Emscripten 6.0.3 while the available
+  local SDK was 4.0.7, so CI-version compatibility also awaits a real run.
 - **Android build.** Never run: no SDK/NDK here. CNA's own documentation
   disagrees with itself about whether the sharp-runtime NDK cross-compile
   currently works at all (`missing.md` cites both sides). The gradle/manifest
   fixes in this pass (renderer selectable via `-PcnaRenderer=`, GLES feature no
   longer falsely claimed as forced) are unbuilt.
 - **Native Windows / MSVC.** Never run: no Windows host.
-- **MinGW cross-compile.** Attempted and blocked by a reproduced upstream bug
-  (SHARP-RUNTIME-1), not completed.
+- **MinGW runtime.** The full cross-build now passes, but `HelloGame.exe` was not
+  run on Windows or under Wine. Native Windows behavior therefore remains
+  unverified even though the PE import/package check is complete.
 - **macOS / METAL.** Never run: no macOS host.
-- **The 23 renderers listed above with real external dependencies** (bgfx,
-  WebGPU, Magnum, Skia, Wicked, Diligent, LLGL, all 12 Windows renderers,
-  Glide, GDI, the 5 web renderers) — configure-time gating is verified;
+- **The 25 renderer builds listed above** (bgfx, WebGPU, Magnum, Skia, Wicked,
+  Diligent, LLGL, the 12 DirectX/Direct2D selectors, Glide, GDI, Metal, and the
+  3 remaining web renderers) — configure-time gating is verified;
   build/runtime is not.
 - **Broad CI tier (`linux-broad` job).** Defined and matrix-generated
   correctly (verified: `--ci-matrix linux --tiers C` returns the right 16
@@ -122,23 +137,28 @@ for r in SDL_RENDERER HEADLESS SOFTWARE STUB VULKAN OPENGL1 OPENGL2 OPENGL4 \
   rm -rf build-probe
 done
 
-# Web (needs emsdk active)
+# Web (needs emsdk active; these are the two CI representatives)
 cmake --preset web-webgl2 && cmake --build --preset web-webgl2 -j3
+cmake --preset web-canvas && cmake --build --preset web-canvas -j3
 
 # Android (needs SDK/NDK)
 cd android && ./gradlew assembleDebug -PcnaRootDir=../../cna -PcnaRenderer=OPENGLES3
+
+# MinGW from Linux
+cmake -S . -B build-probe --toolchain cmake/toolchains/mingw-w64.cmake \
+  -DCNA_GRAPHICS_RENDERER=SDL_RENDERER
+cmake --build build-probe --parallel 3
 ```
 
 ## Immediate next steps, in priority order
 
-1. Run the Web and Android builds on a host that has emsdk / the Android SDK,
-   and update this file's testing matrix with real results.
-2. Re-attempt the MinGW cross-compile after resolving the ZLIB path (either a
-   MinGW zlib dev package or `-DCMAKE_PREFIX_PATH`), to get real Windows-path
-   build evidence beyond configure-gate testing.
-3. File the upstream bugs in `missing.md` (CNA-1 through CNA-6,
-   SHARP-RUNTIME-1) against the real CNA repository, if that has not already
+1. Run the Android build on a host with the SDK/NDK and resolve which of CNA's
+   two contradictory Android status documents is current.
+2. Serve the two generated web bundles in a real browser, and also exercise the
+   CI-pinned Emscripten 6.0.3 rather than only the local 4.0.7 SDK.
+3. Run the cross-built MinGW `HelloGame.exe --smoke-test` on Windows (or in a
+   controlled Wine prefix), then build at least one Windows-only renderer to
+   extend the current SDL_RENDERER-only Windows-path evidence.
+4. File the upstream bugs in `missing.md` (CNA-1 through CNA-9 and
+   SHARP-RUNTIME-1/2) against the real repositories, if that has not already
    happened elsewhere.
-4. Get real hardware/emulator time for the Android build once the SDK gap is
-   closed, and resolve which of CNA's own two contradictory documents about
-   Android NDK compatibility is current.

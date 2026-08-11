@@ -26,7 +26,8 @@ set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
-set(CNA_WINDOWS_DEPENDENCIES_ROOT "" CACHE PATH "Optional root folder containing Windows SDL3/SDL3_image/SDL3_mixer CMake packages")
+set(CNA_WINDOWS_DEPENDENCIES_ROOT "" CACHE PATH
+    "Optional prefix containing Windows-target libraries and CMake packages")
 if(CNA_WINDOWS_DEPENDENCIES_ROOT)
     list(PREPEND CMAKE_PREFIX_PATH "${CNA_WINDOWS_DEPENDENCIES_ROOT}")
 endif()

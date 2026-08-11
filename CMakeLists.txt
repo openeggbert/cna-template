@@ -108,6 +108,41 @@ set(CNA_BUILD_EXAMPLES    OFF CACHE BOOL "Build CNA example applications" FORCE)
 set(EASYGL_BUILD_TESTS    OFF CACHE BOOL "Build easy-gl tests"            FORCE)
 set(EASYGL_BUILD_EXAMPLES OFF CACHE BOOL "Build easy-gl examples"         FORCE)
 
+# CNA's vendored SDL cache defaults inside CNA's own source checkout. That is
+# unsuitable for immutable dependency checkouts and failed during the web
+# verification here. Keep the persistent, target-keyed cache in this
+# consumer's ignored build/ area unless the caller chose another location.
+# See missing.md CNA-9.
+if(NOT DEFINED CNA_SDL_PREBUILT_ROOT)
+    if(EMSCRIPTEN)
+        set(_cna_sdl_cache_target emscripten)
+    else()
+        set(_cna_sdl_cache_target
+            "${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}-${CMAKE_C_COMPILER_ID}")
+    endif()
+    set(CNA_SDL_PREBUILT_ROOT
+        "${CMAKE_CURRENT_SOURCE_DIR}/build/cna-sdl-prebuilt-${_cna_sdl_cache_target}"
+        CACHE PATH "Persistent CNA SDL build cache outside the CNA checkout")
+endif()
+
+# CNA's modular consumption layer owns the exact Sharp Runtime component
+# closure its public targets need. CNA currently loads that layer only after it
+# has already added sharp-runtime, so an embedded build otherwise falls back to
+# SharpRuntime::All and needlessly requires optional dependencies such as zlib
+# on every cross-target. Read CNA's own list before add_subdirectory() rather
+# than duplicating it here. An application that directly uses extra Sharp
+# Runtime APIs can set SHARP_RUNTIME_COMPONENTS itself and link their narrow
+# SharpRuntime::<Component> targets.
+set(_cna_sharp_runtime_consumption
+    "${CNA_ROOT_DIR}/cmake/SharpRuntimeConsumption.cmake")
+if(EXISTS "${_cna_sharp_runtime_consumption}")
+    include("${_cna_sharp_runtime_consumption}")
+    if(NOT DEFINED SHARP_RUNTIME_COMPONENTS)
+        set(SHARP_RUNTIME_COMPONENTS "${CNA_SHARP_RUNTIME_DEFAULT_COMPONENTS}"
+            CACHE STRING "Sharp Runtime components required by CNA")
+    endif()
+endif()
+
 # Same upstream root cause as the src/include guard above: CNA's content module
 # adds its vendored single-header include paths as ${CMAKE_SOURCE_DIR}/third_party/...,
 # which resolves into the CONSUMER's tree rather than CNA's. Building CNA as a
@@ -123,6 +158,106 @@ endforeach()
 
 add_subdirectory("${CNA_ROOT_DIR}" CNA)
 
+# CNA's modular targets correctly use SharpRuntime::<Component>, but a few
+# ancillary upstream tools still link the legacy SHARP_RUNTIME name directly.
+# The modular runtime intentionally creates that compatibility target only for
+# the expensive All selection.  Supply an equivalent bridge over CNA's narrow
+# component set so those tools remain buildable without enabling every optional
+# component (and its cross-platform dependencies).  See missing.md CNA-7.
+if(NOT TARGET SHARP_RUNTIME
+        AND TARGET SharpRuntime::Core.Base
+        AND DEFINED CNA_SHARP_RUNTIME_DEFAULT_COMPONENTS)
+    add_library(SHARP_RUNTIME INTERFACE)
+    foreach(_sharp_component IN LISTS CNA_SHARP_RUNTIME_DEFAULT_COMPONENTS)
+        target_link_libraries(SHARP_RUNTIME INTERFACE
+            "SharpRuntime::${_sharp_component}")
+    endforeach()
+endif()
+
+# The pinned CNA revision changed IGraphicsRenderer::CreateRenderTargetCube()
+# from four to five parameters but missed CanvasRenderer's declaration and
+# definition.  Keep the sibling checkout read-only: derive two build-tree
+# compatibility copies, verify the exact stale signatures before replacing
+# them, then compile CanvasRenderer.cpp against the corrected overlay header.
+# The strict guards make an upstream change fail visibly instead of silently
+# applying a stale textual patch.  See missing.md CNA-8.
+if(EMSCRIPTEN
+        AND CNA_GRAPHICS_RENDERER STREQUAL "CANVAS"
+        AND TARGET cna_renderer_canvas)
+    set(_canvas_source
+        "${CNA_ROOT_DIR}/modules/renderers/canvas/src/CanvasRenderer.cpp")
+    set(_canvas_header
+        "${CNA_ROOT_DIR}/modules/renderers/canvas/include/CNA/Internal/Renderers/Canvas/CanvasRenderer.hpp")
+    cmake_path(NORMAL_PATH _canvas_source)
+    cmake_path(NORMAL_PATH _canvas_header)
+    set(_canvas_compat_root
+        "${CMAKE_CURRENT_BINARY_DIR}/cna-template-compat/canvas")
+    set(_canvas_compat_source "${_canvas_compat_root}/CanvasRenderer.cpp")
+    set(_canvas_compat_header
+        "${_canvas_compat_root}/include/CNA/Internal/Renderers/Canvas/CanvasRenderer.hpp")
+
+    file(READ "${_canvas_header}" _canvas_header_content)
+    set(_canvas_old_header_signature [=[
+        std::unique_ptr<IRenderTargetCubeRenderer> CreateRenderTargetCube(
+            int size, int depthFormat, bool mipMap = false,
+            int multiSampleCount = 0) override;]=])
+    set(_canvas_new_header_signature [=[
+        std::unique_ptr<IRenderTargetCubeRenderer> CreateRenderTargetCube(
+            int size, int depthFormat, bool preserveContents = false,
+            bool mipMap = false, int multiSampleCount = 0) override;]=])
+    string(FIND "${_canvas_header_content}"
+        "${_canvas_old_header_signature}" _canvas_header_signature_position)
+    if(_canvas_header_signature_position EQUAL -1)
+        message(FATAL_ERROR
+            "cna-template: CNA's CanvasRenderer.hpp no longer has the expected "
+            "stale CreateRenderTargetCube signature. Remove or update the CNA-8 "
+            "compatibility block instead of applying it blindly.")
+    endif()
+    string(REPLACE "${_canvas_old_header_signature}"
+        "${_canvas_new_header_signature}"
+        _canvas_header_content "${_canvas_header_content}")
+
+    file(READ "${_canvas_source}" _canvas_source_content)
+    set(_canvas_old_source_signature [=[
+    std::unique_ptr<IRenderTargetCubeRenderer> CanvasRenderer::CreateRenderTargetCube(
+        int size, int, bool, int)]=])
+    set(_canvas_new_source_signature [=[
+    std::unique_ptr<IRenderTargetCubeRenderer> CanvasRenderer::CreateRenderTargetCube(
+        int size, int, bool, bool, int)]=])
+    string(FIND "${_canvas_source_content}"
+        "${_canvas_old_source_signature}" _canvas_source_signature_position)
+    if(_canvas_source_signature_position EQUAL -1)
+        message(FATAL_ERROR
+            "cna-template: CNA's CanvasRenderer.cpp no longer has the expected "
+            "stale CreateRenderTargetCube signature. Remove or update the CNA-8 "
+            "compatibility block instead of applying it blindly.")
+    endif()
+    string(REPLACE "${_canvas_old_source_signature}"
+        "${_canvas_new_source_signature}"
+        _canvas_source_content "${_canvas_source_content}")
+
+    file(MAKE_DIRECTORY
+        "${_canvas_compat_root}"
+        "${_canvas_compat_root}/include/CNA/Internal/Renderers/Canvas")
+    file(CONFIGURE OUTPUT "${_canvas_compat_header}"
+        CONTENT "${_canvas_header_content}" @ONLY)
+    file(CONFIGURE OUTPUT "${_canvas_compat_source}"
+        CONTENT "${_canvas_source_content}" @ONLY)
+
+    get_target_property(_canvas_sources cna_renderer_canvas SOURCES)
+    list(FIND _canvas_sources "${_canvas_source}" _canvas_source_index)
+    if(_canvas_source_index EQUAL -1)
+        message(FATAL_ERROR
+            "cna-template: cannot locate CanvasRenderer.cpp in "
+            "cna_renderer_canvas; refusing an incomplete CNA-8 workaround.")
+    endif()
+    list(REMOVE_ITEM _canvas_sources "${_canvas_source}")
+    set_property(TARGET cna_renderer_canvas PROPERTY SOURCES
+        ${_canvas_sources} "${_canvas_compat_source}")
+    target_include_directories(cna_renderer_canvas BEFORE PRIVATE
+        "${_canvas_compat_root}/include")
+endif()
+
 # CNA has now resolved the renderer (ours or its own default) and published the
 # canonical list in the cache. Re-check both against the manifest.
 cna_template_assert_no_drift()
@@ -133,13 +268,28 @@ cna_template_renderer_field("${CNA_GRAPHICS_RENDERER}" dimension CNA_TEMPLATE_RE
 message(STATUS "cna-template: renderer ${CNA_GRAPHICS_RENDERER} "
                "(${CNA_TEMPLATE_RENDERER_DIMENSION}, display: ${CNA_TEMPLATE_RENDERER_DISPLAY})")
 
-# SDL3's IMPORTED targets are created by find_package() inside CNA's directory
-# scope, so they are not visible up here. Re-importing is cheap and idempotent:
-# CNA has already cached SDL3_DIR pointing at the SDL it built. This must come
-# after add_subdirectory() for exactly that reason.
-if(NOT TARGET SDL3::SDL3)
-    find_package(SDL3 REQUIRED CONFIG)
+# sharp-runtime's RandomAccess.cpp defines the native-only ThrowNative helper
+# on Emscripten too. The platform branches never call it there, so the module's
+# own -Werror turns Clang's -Wunused-function warning into a build failure.
+# Keep the compatibility exception on that one source file; see missing.md
+# SHARP-RUNTIME-2. Remove this once upstream guards or annotates the helper.
+if(EMSCRIPTEN AND TARGET sharp_runtime_io)
+    set_property(SOURCE
+        "${CNA_SHARP_RUNTIME_ROOT}/modules/io/src/System/IO/RandomAccess.cpp"
+        TARGET_DIRECTORY sharp_runtime_io
+        APPEND PROPERTY COMPILE_OPTIONS -Wno-error=unused-function)
 endif()
+
+# SDL's IMPORTED targets are created by find_package() inside CNA's directory
+# scope, so they are not visible up here. Re-importing is cheap and idempotent:
+# CNA has already cached each *_DIR pointing at the libraries it built. All
+# three must be visible here so cna_copy_sdl_runtime() can package their DLLs.
+# This must come after add_subdirectory() for exactly that reason.
+foreach(_sdl_package IN ITEMS SDL3 SDL3_image SDL3_mixer)
+    if(NOT TARGET ${_sdl_package}::${_sdl_package})
+        find_package(${_sdl_package} REQUIRED CONFIG)
+    endif()
+endforeach()
 
 # -----------------------------------------------------------------------------
 # The application
@@ -175,12 +325,13 @@ if(_renderer_category STREQUAL "gl-easygl")
 endif()
 
 # CNA is an INTERFACE umbrella already carrying every framework module, the
-# selected renderer target, the public compile definitions and the public
-# include directories. Linking a renderer target by hand is obsolete, and so is
-# the old -Wl,--start-group wrapper: CNA declares its static-library cycles on
-# the targets themselves, and a linker group around an INTERFACE library
-# expands to nothing anyway.
-target_link_libraries(${_app} PRIVATE CNA SHARP_RUNTIME)
+# selected renderer target, the required Sharp Runtime component targets, the
+# public compile definitions and the public include directories. Linking either
+# a renderer or the legacy all-components SHARP_RUNTIME umbrella by hand is
+# obsolete. So is the old -Wl,--start-group wrapper: CNA declares its
+# static-library cycles on the targets themselves, and a linker group around an
+# INTERFACE library expands to nothing anyway.
+target_link_libraries(${_app} PRIVATE CNA)
 
 if(TARGET SDL3::SDL3main)
     target_link_libraries(${_app} PRIVATE SDL3::SDL3main)
@@ -251,8 +402,18 @@ if(WIN32)
 endif()
 
 if(MINGW)
-    # Run outside MSYS2 without shipping libgcc_s_seh-1.dll / libstdc++-6.dll.
-    target_link_options(${_app} PRIVATE -static-libgcc -static-libstdc++)
+    # CNA's full RTTI graph is not compatible with MinGW's static libstdc++:
+    # PE-COFF fails to fold the inline std::type_info::operator== emitted by
+    # cna_runtime against the identical copy in libstdc++.a. Use the dynamic
+    # runtime and ask CNA to package its DLLs next to the executable instead.
+    if(COMMAND cna_copy_mingw_cxx_runtime)
+        cna_copy_mingw_cxx_runtime(${_app})
+    else()
+        message(WARNING
+            "cna-template: this CNA revision does not provide "
+            "cna_copy_mingw_cxx_runtime(); copy the MinGW GCC and C++ runtime "
+            "DLLs next to ${_app} before running it.")
+    endif()
 endif()
 
 # -----------------------------------------------------------------------------
