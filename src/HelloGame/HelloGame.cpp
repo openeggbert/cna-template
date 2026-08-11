@@ -1,6 +1,7 @@
 #include "HelloGame/HelloGame.hpp"
 
 #include <algorithm>
+#include <iostream>
 
 #include "Microsoft/Xna/Framework/Color.hpp"
 #include "Microsoft/Xna/Framework/Graphics/GraphicsDevice.hpp"

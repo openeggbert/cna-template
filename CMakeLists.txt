@@ -52,7 +52,7 @@ if(EMSCRIPTEN OR ANDROID)
     # FORCE is required: CNA's own default for Emscripten is EASYGL.
     set(CNA_GRAPHICS_BACKEND "SDL_RENDERER" CACHE STRING "CNA graphics backend" FORCE)
 else()
-    set(CNA_GRAPHICS_BACKEND "SDL_RENDERER" CACHE STRING "CNA graphics backend")
+    set(CNA_GRAPHICS_BACKEND "VULKAN" CACHE STRING "CNA graphics backend")
 endif()
 set_property(CACHE CNA_GRAPHICS_BACKEND PROPERTY STRINGS ${CNA_TEMPLATE_BACKENDS})
 
