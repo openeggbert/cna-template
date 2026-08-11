@@ -1,19 +1,21 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 #include "Microsoft/Xna/Framework/Game.hpp"
 #include "Microsoft/Xna/Framework/GameTime.hpp"
 #include "Microsoft/Xna/Framework/GraphicsDeviceManager.hpp"
 #include "Microsoft/Xna/Framework/Vector2.hpp"
+#include "Microsoft/Xna/Framework/Graphics/BasicEffect.hpp"
 #include "Microsoft/Xna/Framework/Graphics/SpriteBatch.hpp"
 #include "Microsoft/Xna/Framework/Graphics/Texture2D.hpp"
 
 /**
  * HelloGame is the example application shipped by cna-template.
  *
- * It is intentionally small: load one texture, draw it, move it with the arrow
- * keys. Delete it and replace it with your own game -- see README.md.
+ * It is intentionally small: load one texture and animate it. Delete it and
+ * replace it with your own game -- see README.md.
  *
  * It is also deliberately renderer-agnostic. CNA has 46 renderers, and they are
  * not interchangeable: some are 2D-only, some open no window at all, some draw
@@ -37,13 +39,23 @@ protected:
 private:
     /** Writes what the selected renderer can actually do to stdout. */
     void ReportRendererCapabilities();
+    void Draw2DLogo();
+    void Draw3DLogoCube();
+    void DrawRendererBanner();
 
     Microsoft::Xna::Framework::GraphicsDeviceManager graphics_;
     std::unique_ptr<Microsoft::Xna::Framework::Graphics::SpriteBatch> spriteBatch_;
+    std::unique_ptr<Microsoft::Xna::Framework::Graphics::BasicEffect> cubeEffect_;
     Microsoft::Xna::Framework::Graphics::Texture2D logoTexture_;
+    Microsoft::Xna::Framework::Graphics::Texture2D solidTexture_;
     Microsoft::Xna::Framework::Vector2 position_;
+    Microsoft::Xna::Framework::Vector2 velocity_;
+    std::string rendererName_;
+    float animationSeconds_;
     bool smokeTest_;
     unsigned int drawnFrames_;
+    bool supportsThreeD_;
+    bool supportsDepth_;
 
     /**
      * False for the renderers that create no window (HEADLESS, SOFTWARE, STUB,
@@ -52,6 +64,8 @@ private:
      */
     bool hasWindow_;
 
-    static constexpr float MoveSpeed = 220.0f; // pixels per second
+    static constexpr float RendererBannerSeconds = 5.0f;
+    static constexpr float AnimationSpeed = 2.0f;
+    static constexpr float Maximum2DLogoScale = 1.08f;
     static constexpr unsigned int SmokeTestFrames = 3;
 };
