@@ -297,6 +297,39 @@ onto the artifacts CNA has just built instead of failing. It compensates for the
 wrong path without hiding anything: if the prebuild has not produced an SDL3
 config, the configure still fails.
 
+### CNA-12 — vendored enet does not configure under CMake 4
+
+**Severity: blocks every host whose CMake is 4.x, whatever the platform.**
+
+`cna/third_party/enet/CMakeLists.txt:1` still declares
+`cmake_minimum_required(VERSION <3.5)`, which CMake 4 refuses outright:
+
+```
+CMake Error at .../cna/third_party/enet/CMakeLists.txt:1 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 has been removed from CMake.
+  ...
+  Or, add -DCMAKE_POLICY_VERSION_MINIMUM=3.5 to try configuring anyway.
+```
+
+Seen on `windows-latest`, which ships CMake 4, immediately after the CNA-11
+workaround let SDL3, SDL3_image and SDL3_mixer configure, build, install and be
+found. It is not a Windows problem: the Linux jobs pass only because
+`ubuntu-latest` still ships CMake 3.x, and they will fail the same way when that
+image updates.
+
+Upstream fix: raise the floor in the vendored enet (`cmake_minimum_required
+(VERSION 3.5...3.31)` or newer), or update the submodule to a release that has
+done so. CNA could also set `CMAKE_POLICY_VERSION_MINIMUM` around its own
+`add_subdirectory` of enet, but that hides the problem for every consumer rather
+than fixing it.
+
+**Template-side compensation:** the Windows CI job configures with
+`-DCMAKE_POLICY_VERSION_MINIMUM=3.5`, the escape hatch CMake's own error message
+names. It is deliberately on that one job rather than in `CMakeLists.txt`:
+applying it globally would silently absorb every future too-old
+`cmake_minimum_required` in any dependency, which is exactly the kind of masking
+this file exists to prevent.
+
 ### SHARP-RUNTIME-1 — default `All` selection pulls zlib into every CNA consumer
 
 Previously filed against `sharp-runtime/CMakeLists.txt:5`; that line no longer

@@ -177,7 +177,20 @@ anywhere. Two jobs are still red:
   looks for `SDL3Config.cmake` in `<prefix>/lib/cmake/SDL3`, but on MSVC SDL
   installs it to `<prefix>/cmake`, so CNA's own `find_package(SDL3 REQUIRED
   CONFIG)` fails on the artifacts it just produced. The template now puts that
-  install prefix on `CMAKE_PREFIX_PATH` under MSVC. Unproven until the next run.
+  install prefix on `CMAKE_PREFIX_PATH` under MSVC.
+
+  **CNA-11 is cleared too** (run `31669731488`): all three SDL packages built,
+  installed into `install/cmake/` — confirming the MSVC layout — and were found.
+  The configure now reaches CNA's vendored **enet**, whose
+  `cmake_minimum_required` predates 3.5 and which CMake 4 refuses
+  (`missing.md` CNA-12). `windows-latest` ships CMake 4; `ubuntu-latest` does
+  not, which is the *only* reason Linux is unaffected — it will break there too
+  when that image updates. The Windows job now passes
+  `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`, deliberately job-local rather than in
+  `CMakeLists.txt`. Unproven until the next run.
+
+  Each Windows round has ended one layer deeper: no generator → CNA-10 →
+  CNA-11 → CNA-12. Nothing has yet compiled a line of *application* code there.
 - **Android.** Evaluation is fixed and 27 tasks execute; it now dies inside the
   NDK CMake configure (`configureCMakeDebug[arm64-v8a]`, cmake exit 1). AGP
   reports only the exit code and buries CMake's own message above a ~150-line

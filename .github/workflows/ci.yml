@@ -291,9 +291,14 @@ jobs:
       # the only lever a consumer has over that child configure.
       - uses: ilammy/msvc-dev-cmd@v1
 
+      # CMAKE_POLICY_VERSION_MINIMUM is CMake 4's own escape hatch for a
+      # dependency that still declares cmake_minimum_required(VERSION < 3.5) —
+      # here CNA's vendored enet. windows-latest ships CMake 4, ubuntu-latest
+      # does not yet, which is the only reason the Linux jobs are unaffected.
+      # See missing.md CNA-12.
       - name: Configure
         working-directory: cna-template
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCNA_GRAPHICS_RENDERER=SDL_RENDERER
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCNA_GRAPHICS_RENDERER=SDL_RENDERER
 
       - name: Build
         working-directory: cna-template
