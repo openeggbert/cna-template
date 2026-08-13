@@ -330,12 +330,33 @@ done so. CNA could also set `CMAKE_POLICY_VERSION_MINIMUM` around its own
 `add_subdirectory` of enet, but that hides the problem for every consumer rather
 than fixing it.
 
-**Template-side compensation:** the Windows CI job configures with
-`-DCMAKE_POLICY_VERSION_MINIMUM=3.5`, the escape hatch CMake's own error message
+**Template-side compensation:** the Windows CI job sets
+`CMAKE_POLICY_VERSION_MINIMUM`, the escape hatch CMake's own error message
 names. It is deliberately on that one job rather than in `CMakeLists.txt`:
 applying it globally would silently absorb every future too-old
 `cmake_minimum_required` in any dependency, which is exactly the kind of masking
 this file exists to prevent.
+
+Passing it as `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` got past enet but then failed
+inside SDL's own installed config files:
+
+```
+CMake Error at .../install/cmake/SDL3_mixer-shared-targets.cmake:10 (cmake_policy):
+  Invalid CMAKE_POLICY_VERSION_MINIMUM value "3".  A numeric
+  major.minor[.patch[.tweak]] must be given.
+Call Stack (most recent call first):
+  .../install/cmake/SDL3_mixerConfig.cmake:65 (include)
+  CMakeLists.txt:300 (find_package)
+```
+
+CMake saw `3`, not the `3.5` that was passed. Neither CNA's `CMakeLists.txt` nor
+SDL_image's and SDL_mixer's `*Config.cmake.in` templates set that variable, so
+where the value lost its fractional part is **not yet established** — PowerShell
+argument parsing on the runner is the obvious suspect but is unproven. The job
+now sets it through the environment instead, which CMake 4 also honours and
+which additionally reaches CNA's child `cmake` invocations, and a failure-only
+step prints `cmake --version`, the cache entry and the environment value so the
+next red run answers this rather than inviting another guess.
 
 ### SHARP-RUNTIME-1 — default `All` selection pulls zlib into every CNA consumer
 

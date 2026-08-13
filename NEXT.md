@@ -189,8 +189,18 @@ anywhere. Two jobs are still red:
   `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`, deliberately job-local rather than in
   `CMakeLists.txt`. Unproven until the next run.
 
+  **CNA-12's workaround then misfired** (run `31670615863`): passed as
+  `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` it cleared enet but CMake then reported
+  `Invalid CMAKE_POLICY_VERSION_MINIMUM value "3"` from inside SDL's installed
+  `SDL3_mixer-shared-targets.cmake`. The value lost its `.5` somewhere; CNA and
+  the SDL config templates were both checked and set it nowhere, so the cause is
+  unestablished. It is now set through the job environment (which CMake 4 also
+  honours, and which reaches CNA's child `cmake` calls too) and a failure-only
+  step prints `cmake --version`, the cache entry and the env value.
+
   Each Windows round has ended one layer deeper: no generator → CNA-10 →
-  CNA-11 → CNA-12. Nothing has yet compiled a line of *application* code there.
+  CNA-11 → CNA-12 → the mangled policy value. Nothing has yet compiled a line of
+  *application* code there.
 - **Android.** Evaluation is fixed and 27 tasks execute; it now dies inside the
   NDK CMake configure (`configureCMakeDebug[arm64-v8a]`, cmake exit 1). AGP
   reports only the exit code and buries CMake's own message above a ~150-line

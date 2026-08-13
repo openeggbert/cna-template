@@ -265,6 +265,11 @@ jobs:
     runs-on: windows-latest
     env:
       CMAKE_GENERATOR: Ninja
+      # CMake 4 reads this from the environment as well as from -D, and unlike
+      # -D it also reaches CNA's child cmake invocations. Passed as -D it
+      # arrived as "3" rather than "3.5" — see missing.md CNA-12 — so the value
+      # is quoted here and the failure path below prints what CMake stored.
+      CMAKE_POLICY_VERSION_MINIMUM: "3.5"
     steps:
       - uses: actions/checkout@v4
         with: { path: cna-template }
@@ -298,7 +303,17 @@ jobs:
       # See missing.md CNA-12.
       - name: Configure
         working-directory: cna-template
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCNA_GRAPHICS_RENDERER=SDL_RENDERER
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCNA_GRAPHICS_RENDERER=SDL_RENDERER
+
+      - name: Show what CMake stored for the policy minimum
+        if: failure()
+        working-directory: cna-template
+        run: |
+          cmake --version
+          if (Test-Path build/CMakeCache.txt) {
+            Select-String -Path build/CMakeCache.txt -Pattern 'POLICY_VERSION_MINIMUM'
+          }
+          Write-Host "env: '$env:CMAKE_POLICY_VERSION_MINIMUM'"
 
       - name: Build
         working-directory: cna-template
