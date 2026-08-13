@@ -182,9 +182,11 @@ anywhere. Two jobs are still red:
   NDK CMake configure (`configureCMakeDebug[arm64-v8a]`, cmake exit 1). AGP
   reports only the exit code and buries CMake's own message above a ~150-line
   Java stack trace, out of reach of the log API's tail. A `if: failure()` step
-  now dumps the `.cxx` logs so the next red run names the actual cause instead
-  of hiding it. This is the point where CNA's contradictory Android
-  documentation finally becomes testable.
+  dumps the `.cxx` artefacts so the next red run names the actual cause. Its
+  first version matched only `*.log` and printed nothing — AGP writes CMake's
+  stderr to `metadata_generation_stderr.txt` — so it now lists the tree first
+  and dumps `*.txt`/`*.json` as well. **The Android cause is still unknown**;
+  do not assume it is the sharp-runtime NDK question until that dump is read.
 
 Nothing here was compiled locally — this session had no CNA checkout.
 

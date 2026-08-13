@@ -328,15 +328,20 @@ jobs:
 
       # AGP reports an NDK configure failure as "cmake ... finished with
       # non-zero exit value 1" and buries CMake's own message hundreds of lines
-      # of Java stack trace above it. These are the files that hold the actual
-      # reason, so a failure here says what broke rather than that it broke.
+      # of Java stack trace above it. CMake's real stderr lands in
+      # metadata_generation_stderr.txt under .cxx; the tree listing comes first
+      # because an earlier version of this step matched only *.log and printed
+      # nothing at all, which looked like there was nothing to find.
       - name: Show the NDK CMake failure
         if: failure()
         working-directory: cna-template/android
         run: |
-          for f in $(find app/.cxx -name 'cmake_configure_command.txt' \
-                                -o -name 'CMakeError.log' \
-                                -o -name 'configure_fingerprint.bin.txt' \
-                                -o -name '*.log' 2>/dev/null); do
-            echo "::group::$f"; cat "$f"; echo "::endgroup::"
-          done
+          echo "::group::.cxx tree"
+          find app/.cxx app/build/intermediates/cxx -type f 2>/dev/null | head -200 || true
+          echo "::endgroup::"
+          find app/.cxx app/build/intermediates/cxx -type f \
+               \( -name '*.txt' -o -name '*.log' -o -name '*.json' \) 2>/dev/null |
+          head -40 |
+          while read -r f; do
+            echo "::group::$f"; tail -c 20000 "$f"; echo; echo "::endgroup::"
+          done || true
