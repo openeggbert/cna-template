@@ -198,8 +198,16 @@ anywhere. Two jobs are still red:
   dumps the `.cxx` artefacts so the next red run names the actual cause. Its
   first version matched only `*.log` and printed nothing — AGP writes CMake's
   stderr to `metadata_generation_stderr.txt` — so it now lists the tree first
-  and dumps `*.txt`/`*.json` as well. **The Android cause is still unknown**;
-  do not assume it is the sharp-runtime NDK question until that dump is read.
+  and dumps `*.txt`/`*.json` as well.
+
+  In run `31670414710` that dump finally produced output, and it carries one
+  hard fact: AGP drives **CMake 4.1.2** (the Android SDK's own). That makes
+  CNA-12 — enet's pre-3.5 `cmake_minimum_required`, which CMake 4 rejects — the
+  leading candidate for the Android failure too. It is *not* confirmed: the
+  dump's last group filled the log tail, so CMake's actual message still has not
+  been read. The step now prints `metadata_generation_stderr.txt` last, where
+  the log API can reach it. Until that is read, do not attribute Android to
+  CNA-12, and do not attribute it to the sharp-runtime NDK question either.
 
 Nothing here was compiled locally — this session had no CNA checkout.
 

@@ -346,7 +346,15 @@ jobs:
           echo "::endgroup::"
           find app/.cxx app/build/intermediates/cxx -type f \
                \( -name '*.txt' -o -name '*.log' -o -name '*.json' \) 2>/dev/null |
+          grep -v metadata_generation_stderr |
           head -40 |
           while read -r f; do
             echo "::group::$f"; tail -c 20000 "$f"; echo; echo "::endgroup::"
+          done || true
+          # Last on purpose: this is the file that holds CMake's own error, and
+          # the log API can only reach the end of a job's log. Everything above
+          # is context; this is the answer.
+          find app/.cxx -name 'metadata_generation_stderr.txt' 2>/dev/null |
+          while read -r f; do
+            echo "=== $f ==="; cat "$f"
           done || true

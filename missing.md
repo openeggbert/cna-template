@@ -317,6 +317,13 @@ found. It is not a Windows problem: the Linux jobs pass only because
 `ubuntu-latest` still ships CMake 3.x, and they will fail the same way when that
 image updates.
 
+The Android job is very likely a second instance of this. Its `.cxx` dump
+records `$CMAKE is the path to CMake 4.1.2` — the Android SDK's own CMake — so
+the NDK configure runs the same CMake generation that rejects enet on Windows.
+Stated as an expectation, not a finding: the CMake message itself has not been
+read yet, and the dump step was reordered so the next red run puts it where the
+log API can reach it.
+
 Upstream fix: raise the floor in the vendored enet (`cmake_minimum_required
 (VERSION 3.5...3.31)` or newer), or update the submodule to a release that has
 done so. CNA could also set `CMAKE_POLICY_VERSION_MINIMUM` around its own
