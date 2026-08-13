@@ -160,8 +160,27 @@ further along and each uncovered exactly one thing standing behind it:
    release-only concern was killing the evaluation of `assembleDebug`. It now
    hangs off `assembleRelease`/`bundleRelease`.
 
-Neither round has produced a green native job yet, and nothing here was
-compiled locally — this session had no CNA checkout.
+**Round 3 — the first green native jobs this template has ever had on CI.** All
+five tier-B Linux renderers now configure, build, and pass *both* smoke tests
+(`SDL_RENDERER`, `OPENGLES3`, `HEADLESS`, `SOFTWARE`, `STUB`; run
+`31668462089`). That is also the first time the 3D demo from `4d0a2c8` has run
+anywhere. Two jobs are still red:
+
+- **Windows.** The Ninja switch did not help, and the log says why: CNA's SDL
+  sub-configure is passed no `-G`, so it takes CMake's Windows default —
+  Visual Studio — regardless of the parent generator, and fails on CNA-10
+  exactly as before. The job now also exports `CMAKE_GENERATOR=Ninja`, which
+  CMake applies to any invocation without `-G`, including that child. Unproven
+  until the next run.
+- **Android.** Evaluation is fixed and 27 tasks execute; it now dies inside the
+  NDK CMake configure (`configureCMakeDebug[arm64-v8a]`, cmake exit 1). AGP
+  reports only the exit code and buries CMake's own message above a ~150-line
+  Java stack trace, out of reach of the log API's tail. A `if: failure()` step
+  now dumps the `.cxx` logs so the next red run names the actual cause instead
+  of hiding it. This is the point where CNA's contradictory Android
+  documentation finally becomes testable.
+
+Nothing here was compiled locally — this session had no CNA checkout.
 
 ## Still unbuilt since the 3D demo landed
 

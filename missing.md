@@ -228,16 +228,26 @@ Linux never sees it because Makefiles and Ninja are single-config, which is why
 it survived the modernization audit — the Windows job was failing earlier, on a
 pinned generator that no longer existed, and never reached this point.
 
+There is a second half to it: the sub-configure is passed **no `-G` at all**, so
+it does not inherit the parent's generator either. Configuring the template
+itself with `-G Ninja` changed nothing — the child still chose CMake's Windows
+default, Visual Studio, and failed identically. On Windows the vendored SDL
+prebuild therefore cannot succeed through any argument a consumer passes.
+
 Upstream fix: give both commands an explicit configuration, e.g.
 `--build "${_A_BUILDDIR}" --config Release` and `--install "${_A_BUILDDIR}"
---config Release`, matching the `CMAKE_BUILD_TYPE=Release` already requested.
-The template cannot inject it: the sub-build is a separate `execute_process`
-that inherits only `CMAKE_TOOLCHAIN_FILE` and the Android cache variables.
+--config Release`, matching the `CMAKE_BUILD_TYPE=Release` already requested,
+and forward `CMAKE_GENERATOR` to the sub-configure so it follows the parent
+build. The template cannot inject either: the sub-build is a separate
+`execute_process` that inherits only `CMAKE_TOOLCHAIN_FILE` and the Android
+cache variables.
 
-**Template-side compensation:** the Windows CI job configures with Ninja, a
-single-config generator, so the requested and installed configurations agree.
-That is a workaround for CI only — anyone configuring this template on Windows
-with the default Visual Studio generator still hits the bug.
+**Template-side compensation:** the Windows CI job sets the `CMAKE_GENERATOR`
+environment variable to `Ninja`. CMake honours that in any invocation that has
+no `-G`, including CNA's child configure, which makes the prebuild single-config
+so the requested and installed configurations agree. That is a workaround for
+CI only — anyone configuring this template on Windows without that environment
+variable still hits the bug.
 
 ### SHARP-RUNTIME-1 — default `All` selection pulls zlib into every CNA consumer
 

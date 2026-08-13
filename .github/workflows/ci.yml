@@ -263,6 +263,8 @@ jobs:
   windows:
     name: Windows (MSVC, SDL_RENDERER)
     runs-on: windows-latest
+    env:
+      CMAKE_GENERATOR: Ninja
     steps:
       - uses: actions/checkout@v4
         with: { path: cna-template }
@@ -281,6 +283,12 @@ jobs:
       # and then looks for it in Release/ and dies. Single-config keeps the two
       # in step. See missing.md, CNA-10 — the pinned generator that used to be
       # here was hiding this behind an earlier failure.
+      #
+      # CMAKE_GENERATOR is the load-bearing half. CNA's prebuild is a separate
+      # cmake invocation that is passed no -G at all, so it takes CMake's own
+      # Windows default — Visual Studio — no matter what the parent build uses.
+      # -G Ninja alone therefore changed nothing; the environment variable is
+      # the only lever a consumer has over that child configure.
       - uses: ilammy/msvc-dev-cmd@v1
 
       - name: Configure
@@ -317,3 +325,18 @@ jobs:
       - name: Assemble debug APK
         working-directory: cna-template/android
         run: ./gradlew --no-daemon assembleDebug -PcnaRootDir="${GITHUB_WORKSPACE}/cna"
+
+      # AGP reports an NDK configure failure as "cmake ... finished with
+      # non-zero exit value 1" and buries CMake's own message hundreds of lines
+      # of Java stack trace above it. These are the files that hold the actual
+      # reason, so a failure here says what broke rather than that it broke.
+      - name: Show the NDK CMake failure
+        if: failure()
+        working-directory: cna-template/android
+        run: |
+          for f in $(find app/.cxx -name 'cmake_configure_command.txt' \
+                                -o -name 'CMakeError.log' \
+                                -o -name 'configure_fingerprint.bin.txt' \
+                                -o -name '*.log' 2>/dev/null); do
+            echo "::group::$f"; cat "$f"; echo "::endgroup::"
+          done
