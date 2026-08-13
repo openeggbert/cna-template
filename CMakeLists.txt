@@ -125,6 +125,16 @@ if(NOT DEFINED CNA_SDL_PREBUILT_ROOT)
         CACHE PATH "Persistent CNA SDL build cache outside the CNA checkout")
 endif()
 
+# CNA points SDL3_DIR at <prefix>/lib/cmake/SDL3, which is SDL's layout
+# everywhere except MSVC: there SDL installs SDL3Config.cmake into <prefix>/cmake
+# instead, so CNA's own find_package(SDL3 REQUIRED CONFIG) fails immediately
+# after its prebuild succeeded. CMake's config search looks in <prefix>/cmake on
+# Windows, so putting the install prefix on CMAKE_PREFIX_PATH lets that fallback
+# find the very artifacts CNA just built. See missing.md CNA-11.
+if(MSVC)
+    list(APPEND CMAKE_PREFIX_PATH "${CNA_SDL_PREBUILT_ROOT}/install")
+endif()
+
 # CNA's modular consumption layer owns the exact Sharp Runtime component
 # closure its public targets need. CNA currently loads that layer only after it
 # has already added sharp-runtime, so an embedded build otherwise falls back to

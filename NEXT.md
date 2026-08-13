@@ -170,8 +170,14 @@ anywhere. Two jobs are still red:
   sub-configure is passed no `-G`, so it takes CMake's Windows default —
   Visual Studio — regardless of the parent generator, and fails on CNA-10
   exactly as before. The job now also exports `CMAKE_GENERATOR=Ninja`, which
-  CMake applies to any invocation without `-G`, including that child. Unproven
-  until the next run.
+  CMake applies to any invocation without `-G`, including that child.
+
+  **That worked** (run `31669470804`: no MSBuild, SDL3 configured, built and
+  installed) and exposed the next one straight away, `missing.md` CNA-11: CNA
+  looks for `SDL3Config.cmake` in `<prefix>/lib/cmake/SDL3`, but on MSVC SDL
+  installs it to `<prefix>/cmake`, so CNA's own `find_package(SDL3 REQUIRED
+  CONFIG)` fails on the artifacts it just produced. The template now puts that
+  install prefix on `CMAKE_PREFIX_PATH` under MSVC. Unproven until the next run.
 - **Android.** Evaluation is fixed and 27 tasks execute; it now dies inside the
   NDK CMake configure (`configureCMakeDebug[arm64-v8a]`, cmake exit 1). AGP
   reports only the exit code and buries CMake's own message above a ~150-line

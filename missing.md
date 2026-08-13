@@ -249,6 +249,54 @@ so the requested and installed configurations agree. That is a workaround for
 CI only — anyone configuring this template on Windows without that environment
 variable still hits the bug.
 
+### CNA-11 — SDL's cmake-config directory is hardcoded to the non-MSVC layout
+
+**Severity: blocks MSVC builds; sits directly behind CNA-10.**
+
+`cmake/ThirdPartySDL.cmake:64-65` computes
+
+```cmake
+set(_prefix    "${CNA_SDL_PREBUILT_ROOT}/install")
+set(_cmake_dir "${_prefix}/lib/cmake")
+```
+
+and then forces `SDL3_DIR`, `SDL3_image_DIR` and `SDL3_mixer_DIR` to
+`${_cmake_dir}/<name>` before calling `find_package(... REQUIRED CONFIG)`. SDL
+only uses that layout off MSVC. Its own `CMakeLists.txt:4166-4189` selects the
+install directory as
+
+```cmake
+if(WINDOWS AND NOT MINGW)
+  set(SDL_INSTALL_CMAKEDIR_ROOT_DEFAULT "cmake")
+else()
+  set(SDL_INSTALL_CMAKEDIR_ROOT_DEFAULT "${CMAKE_INSTALL_LIBDIR}/cmake/SDL3")
+endif()
+```
+
+so under MSVC `SDL3Config.cmake` lands in `<prefix>/cmake`, not
+`<prefix>/lib/cmake/SDL3`. Observed once CNA-10 was worked around: the prebuild
+configured, compiled and installed cleanly, and the configure then died on
+
+```
+Could not find a package configuration file provided by "SDL3" ...
+  Add the installation prefix of "SDL3" to CMAKE_PREFIX_PATH or set
+  "SDL3_DIR" to a directory containing one of the above files.
+Call Stack (most recent call first):
+  .../cna/CMakeLists.txt:75 (cna_configure_vendored_sdl)
+```
+
+Upstream fix: derive the config directory the same way SDL does — `cmake` when
+`WIN32 AND NOT MINGW`, `${CMAKE_INSTALL_LIBDIR}/cmake/SDL3` otherwise — or drop
+the hardcoded `*_DIR` values and put `${_prefix}` on `CMAKE_PREFIX_PATH`, which
+is correct on every platform.
+
+**Template-side compensation:** `CMakeLists.txt` appends
+`${CNA_SDL_PREBUILT_ROOT}/install` to `CMAKE_PREFIX_PATH` under MSVC. CMake's
+config search includes `<prefix>/cmake` on Windows, so `find_package` falls back
+onto the artifacts CNA has just built instead of failing. It compensates for the
+wrong path without hiding anything: if the prebuild has not produced an SDL3
+config, the configure still fails.
+
 ### SHARP-RUNTIME-1 — default `All` selection pulls zlib into every CNA consumer
 
 Previously filed against `sharp-runtime/CMakeLists.txt:5`; that line no longer
