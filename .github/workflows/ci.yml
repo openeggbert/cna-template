@@ -47,9 +47,9 @@ env:
   # https://wiki.libsdl.org/SDL3/README-linux#build-dependencies
   SDL_LINUX_PACKAGES: >-
     libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev
-    libxfixes-dev libxss-dev libxkbcommon-dev libwayland-dev
-    wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev libudev-dev
-    libasound2-dev libpulse-dev
+    libxfixes-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev
+    wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev libegl-dev
+    libudev-dev libdbus-1-dev libibus-1.0-dev libasound2-dev libpulse-dev
 
 jobs:
   # --- Tier A -------------------------------------------------------------
@@ -275,18 +275,21 @@ jobs:
         working-directory: cna
         run: git submodule update --init third_party/SDL third_party/SDL_image third_party/SDL_mixer third_party/enet
 
-      # No -G here on purpose. Pinning "Visual Studio 17 2022" broke the moment
-      # windows-latest moved to an image without VS 2022 installed. CMake's
-      # default generator on Windows is whichever Visual Studio the runner does
-      # have, and VS 2019 and newer generators already default to the x64 host
-      # platform, so neither -G nor -A is needed to get the same build.
+      # Ninja rather than a Visual Studio generator, and not for speed: CNA's
+      # vendored SDL prebuild builds without --config and installs without one
+      # either, so under any multi-config generator it compiles SDL into Debug/
+      # and then looks for it in Release/ and dies. Single-config keeps the two
+      # in step. See missing.md, CNA-10 — the pinned generator that used to be
+      # here was hiding this behind an earlier failure.
+      - uses: ilammy/msvc-dev-cmd@v1
+
       - name: Configure
         working-directory: cna-template
-        run: cmake -S . -B build -DCNA_GRAPHICS_RENDERER=SDL_RENDERER
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCNA_GRAPHICS_RENDERER=SDL_RENDERER
 
       - name: Build
         working-directory: cna-template
-        run: cmake --build build --config Debug --parallel 3
+        run: cmake --build build --parallel 3
 
   android:
     name: Android (Gradle)

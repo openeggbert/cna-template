@@ -144,8 +144,24 @@ three causes were separate and none of them was a renderer problem:
    for. Fixed by converting the elements; the failing and fixed expressions
    were both checked against Groovy 3.0.24 outside Gradle.
 
-None of the three has been through CI yet, and none of them was compiled
-locally — this session had no CNA checkout.
+**Round 2, after the first run of those fixes.** All three moved the failure
+further along and each uncovered exactly one thing standing behind it:
+
+1. Linux now detects X11, ALSA and PulseAudio, and stops one check later on
+   `Couldn't find dependency package for XTEST` — `libxtst-dev` was missing from
+   the list, and `libdbus-1-dev`, `libibus-1.0-dev` and `libegl-dev` were added
+   with it so the remaining optional SDL checks stop degrading silently.
+2. Windows found Visual Studio, configured and compiled all of SDL3, and then
+   died in CNA's SDL *install* step: it builds `Debug/SDL3.dll` and installs
+   `Release/SDL3.dll`. That is an upstream multi-config bug, now `missing.md`
+   CNA-10; the job switched to Ninja, which is single-config, to get past it.
+3. Android got past line 56 and failed at line 80 on `doFirst()` — the
+   missing-keystore guard sat on a `BuildType`, which is not a Task, so a
+   release-only concern was killing the evaluation of `assembleDebug`. It now
+   hangs off `assembleRelease`/`bundleRelease`.
+
+Neither round has produced a green native job yet, and nothing here was
+compiled locally — this session had no CNA checkout.
 
 ## Still unbuilt since the 3D demo landed
 

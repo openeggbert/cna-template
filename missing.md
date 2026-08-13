@@ -197,6 +197,48 @@ while preserving an explicit caller value. Upstream should default to a user
 cache or binary-tree location, or at least detect a non-writable CNA source and
 choose one, while retaining the explicit cache override.
 
+### CNA-10 — the vendored SDL prebuild builds Debug and installs Release
+
+**Severity: blocks every multi-config generator, so every stock Windows build.**
+
+`cmake/ThirdPartySDL.cmake:205-233` (`_cna_build_sdl_dep`) passes
+`-DCMAKE_BUILD_TYPE=Release` to the sub-configure and then runs
+
+```cmake
+COMMAND ${CMAKE_COMMAND} --build "${_A_BUILDDIR}" --parallel ...
+COMMAND ${CMAKE_COMMAND} --install "${_A_BUILDDIR}"
+```
+
+with no `--config` on either. `CMAKE_BUILD_TYPE` is ignored by multi-config
+generators, so `--build` produces the generator's default configuration (Debug
+for Visual Studio) while `--install` uses the install script's default
+(Release). Observed on `windows-latest` with the Visual Studio generator: SDL3
+compiled cleanly, `Debug/SDL3.dll` was linked, and then
+
+```
+-- CNA: Installing SDL3...
+-- Install configuration: "Release"
+CMake Error at .../SDL/build/cmake_install.cmake:57 (file):
+  file INSTALL cannot find ".../SDL/build/Release/SDL3.dll": File exists.
+CMake Error at .../cna/cmake/ThirdPartySDL.cmake:233 (message):
+  CNA: SDL3 install failed (exit code 1)
+```
+
+Linux never sees it because Makefiles and Ninja are single-config, which is why
+it survived the modernization audit — the Windows job was failing earlier, on a
+pinned generator that no longer existed, and never reached this point.
+
+Upstream fix: give both commands an explicit configuration, e.g.
+`--build "${_A_BUILDDIR}" --config Release` and `--install "${_A_BUILDDIR}"
+--config Release`, matching the `CMAKE_BUILD_TYPE=Release` already requested.
+The template cannot inject it: the sub-build is a separate `execute_process`
+that inherits only `CMAKE_TOOLCHAIN_FILE` and the Android cache variables.
+
+**Template-side compensation:** the Windows CI job configures with Ninja, a
+single-config generator, so the requested and installed configurations agree.
+That is a workaround for CI only — anyone configuring this template on Windows
+with the default Visual Studio generator still hits the bug.
+
 ### SHARP-RUNTIME-1 — default `All` selection pulls zlib into every CNA consumer
 
 Previously filed against `sharp-runtime/CMakeLists.txt:5`; that line no longer

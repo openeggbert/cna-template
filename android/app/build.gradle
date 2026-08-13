@@ -76,19 +76,11 @@ android {
     }
     buildTypes {
         release {
-            if (!keystorePropertiesFile.exists()) {
-                doFirst {
-                    throw new GradleException(
-                        "\n\n" +
-                        "========================================================\n" +
-                        " ERROR: key.properties not found in android/ directory.\n" +
-                        " Cannot build a signed release APK.\n" +
-                        " See ../README.md (Android section) for instructions on\n" +
-                        " creating key.properties and a signing keystore.\n" +
-                        "========================================================\n"
-                    )
-                }
-            }
+            // The missing-keystore guard is NOT here: a BuildType is not a Task
+            // and has no doFirst(), so putting it here fails while the project
+            // is being evaluated -- which breaks assembleDebug too, for a
+            // release-only problem. It hangs off the release tasks instead,
+            // below the android { } block.
             signingConfig signingConfigs.release
             minifyEnabled false
             debuggable false
@@ -123,6 +115,24 @@ android {
 
     lint {
         abortOnError = true
+    }
+}
+
+// Fail the release build itself, not the evaluation of every build type, when
+// there is nothing to sign it with.
+if (!keystorePropertiesFile.exists()) {
+    tasks.matching { it.name in ["assembleRelease", "bundleRelease"] }.configureEach {
+        doFirst {
+            throw new GradleException(
+                "\n\n" +
+                "========================================================\n" +
+                " ERROR: key.properties not found in android/ directory.\n" +
+                " Cannot build a signed release APK.\n" +
+                " See ../README.md (Android section) for instructions on\n" +
+                " creating key.properties and a signing keystore.\n" +
+                "========================================================\n"
+            )
+        }
     }
 }
 
