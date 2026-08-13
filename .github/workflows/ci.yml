@@ -39,6 +39,18 @@ env:
   META_GL_REF: 571d3a62fe166b9781ac6193d137b12ff3757620
   FREE_DIRECT_REF: 934f72ff0c52902631fceeb52c006f3ed2767485
 
+  # CNA always configures its vendored SDL3, even for the renderers that open no
+  # window, so every Linux job needs SDL's own build dependencies. The runner
+  # image ships the X11 runtime libraries but not their headers, and SDL treats
+  # "no X11 and no Wayland development libraries" as a hard configure error — so
+  # without these the build dies inside SDL before a renderer is ever compiled.
+  # https://wiki.libsdl.org/SDL3/README-linux#build-dependencies
+  SDL_LINUX_PACKAGES: >-
+    libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev
+    libxfixes-dev libxss-dev libxkbcommon-dev libwayland-dev
+    wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev libudev-dev
+    libasound2-dev libpulse-dev
+
 jobs:
   # --- Tier A -------------------------------------------------------------
   structure:
@@ -119,7 +131,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build ccache pkg-config xvfb \
             libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
-            libgl1-mesa-dev libglu1-mesa-dev mesa-utils
+            libgl1-mesa-dev libglu1-mesa-dev mesa-utils \
+            $SDL_LINUX_PACKAGES
 
       - name: Fetch CNA's vendored SDL submodules
         working-directory: cna
@@ -176,7 +189,8 @@ jobs:
           sudo apt-get install -y ninja-build ccache pkg-config \
             libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
             libgl1-mesa-dev libglu1-mesa-dev libvulkan-dev \
-            libgles-dev libshaderc-dev
+            libgles-dev libshaderc-dev \
+            $SDL_LINUX_PACKAGES
 
       - name: Fetch CNA's vendored SDL submodules
         working-directory: cna
@@ -261,9 +275,14 @@ jobs:
         working-directory: cna
         run: git submodule update --init third_party/SDL third_party/SDL_image third_party/SDL_mixer third_party/enet
 
+      # No -G here on purpose. Pinning "Visual Studio 17 2022" broke the moment
+      # windows-latest moved to an image without VS 2022 installed. CMake's
+      # default generator on Windows is whichever Visual Studio the runner does
+      # have, and VS 2019 and newer generators already default to the x64 host
+      # platform, so neither -G nor -A is needed to get the same build.
       - name: Configure
         working-directory: cna-template
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCNA_GRAPHICS_RENDERER=SDL_RENDERER
+        run: cmake -S . -B build -DCNA_GRAPHICS_RENDERER=SDL_RENDERER
 
       - name: Build
         working-directory: cna-template

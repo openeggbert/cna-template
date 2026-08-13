@@ -121,6 +121,43 @@ listed rather than implied to pass.
   correctly (verified: `--ci-matrix linux --tiers C` returns the right 16
   names), but has never executed on a real runner.
 
+## CI repairs, 2026-08-13 — not yet confirmed by a run
+
+The first CI run after the modernization pass was red on every native job. The
+three causes were separate and none of them was a renderer problem:
+
+1. **Every Linux job died inside SDL, before any renderer was compiled.**
+   `SDL could not find X11 or Wayland development libraries`. The runner image
+   carries the X11 runtime libraries but not their headers, and the workflow
+   installed FFmpeg and Mesa but none of SDL's own build dependencies. It hit
+   `HEADLESS`, `SOFTWARE` and `STUB` too, because CNA configures its vendored
+   SDL3 whatever the renderer. Fixed by an `SDL_LINUX_PACKAGES` env list shared
+   by the tier-B and tier-C jobs.
+2. **Windows/MSVC never reached CNA:** `Generator Visual Studio 17 2022 could
+   not find any instance of Visual Studio` — windows-latest no longer has VS
+   2022. Fixed by dropping the `-G`/`-A` pin and letting CMake pick the VS the
+   runner actually has.
+3. **Android failed while evaluating `android/app/build.gradle`,** at
+   `arraycopy: element type mismatch`: the CMake argument list holds Groovy
+   GStrings, which `toArray(new String[0])` cannot store. This is a template
+   bug, not the upstream NDK question the job's `continue-on-error` was there
+   for. Fixed by converting the elements; the failing and fixed expressions
+   were both checked against Groovy 3.0.24 outside Gradle.
+
+None of the three has been through CI yet, and none of them was compiled
+locally — this session had no CNA checkout.
+
+## Still unbuilt since the 3D demo landed
+
+`4d0a2c8` ("demo: showcase 2D and 3D renderer capabilities") added the
+`BasicEffect` / `DrawUserPrimitives` / depth-state path *after* the verification
+matrix above was recorded. Since then the only green builds anywhere are the two
+web ones, so that 3D path has been compiled exactly once (`WEBGL2`, which does
+compile it) and **has never run on any renderer**. The renderers that were
+actually executed — `STUB`, `SOFTWARE`, `PORTABLEGL` — all report `2d3d`, so a
+re-run exercises code that has never been exercised. Treat the "native build
+(smoke where feasible)" row above as evidence about `2b858e9`, not about HEAD.
+
 ## Commands for the next session
 
 ```bash
