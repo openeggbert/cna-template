@@ -338,6 +338,12 @@ endif()
 # INTERFACE library expands to nothing anyway.
 target_link_libraries(${_app} PRIVATE CNA)
 
+# CNA owns renderer-specific runtime payload knowledge. Ask it to deploy any
+# selected renderer's shared libraries beside this final executable.
+if(COMMAND cna_copy_renderer_runtime)
+    cna_copy_renderer_runtime(${_app})
+endif()
+
 if(TARGET SDL3::SDL3main)
     target_link_libraries(${_app} PRIVATE SDL3::SDL3main)
 endif()
