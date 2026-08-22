@@ -122,7 +122,7 @@ HelloGame::HelloGame(const bool smokeTest)
       smokeTest_(smokeTest),
       drawnFrames_(0),
       supportsThreeD_(false),
-      supportsDepth_(false),
+      supportsCombinedDepthStencil_(false),
       hasWindow_(false)
 {
     // Deliberately not calling setPreferredBackBufferWidth/HeightProperty()
@@ -142,7 +142,7 @@ void HelloGame::ReportRendererCapabilities()
     std::cout << "cna-template: renderer " << rendererName_ << "\n"
               << "  window          : " << (hasWindow_ ? "yes" : "no (windowless renderer)") << "\n"
               << "  3D pipeline     : " << (supportsThreeD_ ? "yes" : "no (2D only)") << "\n"
-              << "  depth/stencil   : " << (supportsDepth_ ? "yes" : "no") << "\n"
+              << "  combined D/S    : " << (supportsCombinedDepthStencil_ ? "yes" : "no") << "\n"
               << "  custom shaders  : "
               << (device.SupportsCapability(CNA::GraphicsCapability::CustomEffects) ? "yes" : "no")
               << "\n"
@@ -173,7 +173,8 @@ void HelloGame::LoadContent()
     Game::getWindowProperty().setTitleProperty(
         "cna-template - HelloGame (" + rendererName_ + ")");
     supportsThreeD_ = device.SupportsCapability(CNA::GraphicsCapability::ThreeD);
-    supportsDepth_ = device.SupportsCapability(CNA::GraphicsCapability::DepthStencilBuffer);
+    supportsCombinedDepthStencil_ =
+        device.SupportsCapability(CNA::GraphicsCapability::DepthStencilBuffer);
 
     if (supportsThreeD_) {
         cubeEffect_ = std::make_unique<BasicEffect>(device);
@@ -274,8 +275,10 @@ void HelloGame::Draw3DLogoCube()
         Matrix::CreatePerspectiveFieldOfView(0.78539816339f, aspectRatio, 0.1f, 100.0f));
 
     device.setBlendStateProperty(BlendState::Opaque);
-    device.setDepthStencilStateProperty(supportsDepth_ ? DepthStencilState::Default
-                                                       : DepthStencilState::None);
+    // ThreeD promises the standard depth-state path. DepthStencilBuffer is the stricter CNAEXT
+    // capability for a combined depth-and-stencil attachment, so it is false on depth-only
+    // renderers such as GLIDE and must not be used to disable their real Z buffer.
+    device.setDepthStencilStateProperty(DepthStencilState::Default);
     device.setRasterizerStateProperty(RasterizerState::CullNone);
 
     for (auto& pass : cubeEffect_->getCurrentTechniqueProperty()->getPassesProperty()) {
@@ -330,7 +333,7 @@ void HelloGame::Draw(const GameTime& gameTime)
     (void)gameTime;
 
     auto& device = getGraphicsDeviceProperty();
-    if (supportsThreeD_ && supportsDepth_) {
+    if (supportsThreeD_) {
         device.Clear(Color::CornflowerBlue, 1.0f);
     } else {
         device.Clear(Color::CornflowerBlue);

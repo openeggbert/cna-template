@@ -55,7 +55,7 @@ private:
     bool smokeTest_;
     unsigned int drawnFrames_;
     bool supportsThreeD_;
-    bool supportsDepth_;
+    bool supportsCombinedDepthStencil_;
 
     /**
      * False for the renderers that create no window (HEADLESS, SOFTWARE, STUB,
