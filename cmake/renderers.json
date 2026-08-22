@@ -164,6 +164,13 @@
       "tier": "C", "preset": true,
       "notes": "CPU OpenGL 3.x-style pipeline. Links no SDL3 and needs no display at all."
     },
+    {
+      "name": "TINYGL", "category": "cpu", "dimension": "2d3d",
+      "platforms": ["linux", "windows", "macos", "android"], "gate": "none",
+      "display": "none", "dependency": "C-Chads/tinygl via FetchContent",
+      "tier": "C", "preset": true,
+      "notes": "CPU fixed-function OpenGL 1.x subset. Links no SDL3 and needs no display at all."
+    },
 
     {
       "name": "SKIA", "category": "raster-2d", "dimension": "2d",
@@ -206,6 +213,13 @@
       "display": "window", "dependency": "none", "tier": "C", "preset": true,
       "webflags": [],
       "notes": "Draws sprites as real <svg>/<image> elements. No WebGL."
+    },
+    {
+      "name": "PIXIJS", "category": "web-dom", "dimension": "2d",
+      "platforms": ["web"], "gate": "fatal",
+      "display": "window", "dependency": "pinned PixiJS v7 UMD build",
+      "tier": "C", "preset": true, "webflags": [],
+      "notes": "PixiJS retained-mode WebGL scene graph for SpriteBatch and render targets."
     },
 
     {
@@ -250,11 +264,25 @@
       "notes": "LLGL picks OpenGL or Vulkan at runtime. Needs libshaderc installed."
     },
     {
+      "name": "IGL", "category": "middleware", "dimension": "2d3d",
+      "platforms": ["linux"], "gate": "none",
+      "display": "window", "dependency": "facebook/igl v1.1.1 plus selected bootstrap dependencies",
+      "tier": "D", "preset": false,
+      "notes": "Meta IGL with CNA's verified Linux OpenGL/GLX and Vulkan backends."
+    },
+    {
       "name": "FNA3D", "category": "middleware", "dimension": "2d3d",
       "platforms": ["linux", "windows", "macos"], "gate": "none",
       "display": "window", "dependency": "FNA3D + MojoShader via FetchContent; needs Python3",
       "tier": "C", "preset": true,
       "notes": "The XNA-shaped C library FNA renders through. Picks SDL_GPU/D3D11/GL at runtime."
+    },
+    {
+      "name": "NANOVG", "category": "raster-2d", "dimension": "2d",
+      "platforms": ["linux", "windows", "macos"], "gate": "fatal",
+      "display": "window", "dependency": "NanoVG via FetchContent + system OpenGL",
+      "tier": "C", "preset": false,
+      "notes": "NanoVG vector graphics through its desktop OpenGL 2 backend."
     },
 
     {

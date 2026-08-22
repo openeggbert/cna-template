@@ -158,29 +158,21 @@ re-enabling `All`.
 
 ### CNA-8 — CANVAS did not follow the `CreateRenderTargetCube` interface change
 
-`IGraphicsRenderer::CreateRenderTargetCube()` now takes five arguments; the new
-third argument is `preserveContents`
-(`modules/graphics/include/CNA/Internal/Renderers/Common/IGraphicsRenderer.hpp:1482`).
-The pinned CANVAS renderer still declares and defines the old four-argument
-method:
+`IGraphicsRenderer::CreateRenderTargetCube()` gained a third
+`preserveContents` argument. Older CNA revisions left CANVAS with the stale
+four-argument declaration and definition, so Clang rejected its non-overriding
+method marked `override` before application sources were linked.
 
-- `modules/renderers/canvas/include/CNA/Internal/Renderers/Canvas/CanvasRenderer.hpp:112-114`
-- `modules/renderers/canvas/src/CanvasRenderer.cpp:361-362`
+**Resolved upstream:** current CNA includes `preserveContents` in both CANVAS
+signatures. The 50-renderer verification confirmed that this form configures
+and builds under Emscripten.
 
-Clang correctly rejects the header because a non-overriding overload is marked
-`override`. This made the CI representative CANVAS build impossible before any
-application source was linked.
-
-**Fix upstream:** insert `bool preserveContents` in the CANVAS declaration and
-definition, matching every updated renderer. CANVAS does not retain cube-target
-content, so the implementation may intentionally leave it unnamed/unused.
-
-**What this template does meanwhile:** only for an Emscripten CANVAS build, it
-verifies both exact stale signatures, derives corrected copies under the build
-tree, and compiles the renderer against an overlay header. It never edits CNA's
-checkout. Every textual replacement and source-list assumption is guarded by a
-fatal error so the workaround cannot silently survive an upstream source
-change.
+**Compatibility retained by this template:** for an older Emscripten CANVAS
+checkout, the template still verifies both exact stale signatures, derives
+corrected copies under the build tree, and compiles the renderer against an
+overlay header without editing CNA. When the corrected signature is already
+present, it skips the overlay. Unknown or inconsistent signature pairs remain
+a fatal error so the workaround cannot silently outlive another API change.
 
 ### CNA-9 — vendored SDL's persistent cache defaults inside the source checkout
 

@@ -212,7 +212,7 @@ function(cna_template_validate_renderer renderer cna_root)
     list(LENGTH _canonical _count)
 
     if(NOT renderer IN_LIST _canonical)
-        # Offer the closest matches rather than dumping 46 names unsorted.
+        # Offer the closest matches rather than dumping 50 names unsorted.
         set(_hint)
         foreach(_r IN LISTS _canonical)
             if(_r MATCHES "^${renderer}" OR renderer MATCHES "^${_r}")

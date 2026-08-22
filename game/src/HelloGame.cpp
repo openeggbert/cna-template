@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "CNA/GraphicsCapability.hpp"
+#include "CNA/Platform/NativeWindowSystem.hpp"
 #include "Microsoft/Xna/Framework/Color.hpp"
 #include "Microsoft/Xna/Framework/Matrix.hpp"
 #include "Microsoft/Xna/Framework/Vector3.hpp"
@@ -151,10 +152,14 @@ void HelloGame::ReportRendererCapabilities()
 
 void HelloGame::LoadContent()
 {
-    // A renderer with no SDL window still has a working GraphicsDevice,
-    // SpriteBatch and ContentManager -- it just has nowhere to present. CNA
-    // exposes no capability for "has a window", so probe the window itself.
-    hasWindow_ = Game::getWindowProperty().GetNativeSdlWindowEXT() != nullptr;
+    // A windowless platform still has a working GraphicsDevice, SpriteBatch and
+    // ContentManager -- it just has nowhere graphical to present. Web is a
+    // deliberate non-native handle with a real canvas, so classify the platform
+    // discriminator instead of testing one backend-specific pointer.
+    const auto windowSystem = Game::getWindowProperty().GetNativeWindowHandleEXT().system;
+    hasWindow_ = windowSystem != CNA::Platform::NativeWindowSystem::Unknown
+        && windowSystem != CNA::Platform::NativeWindowSystem::Headless
+        && windowSystem != CNA::Platform::NativeWindowSystem::Terminal;
 
     auto& device = getGraphicsDeviceProperty();
     spriteBatch_ = std::make_unique<SpriteBatch>(device);

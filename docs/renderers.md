@@ -3,7 +3,7 @@
 
 # CNA renderers
 
-CNA currently exposes **46 renderers**. You pick one at configure time with a single cache variable:
+CNA currently exposes **50 renderers**. You pick one at configure time with a single cache variable:
 
 ```bash
 cmake -S . -B build -DCNA_GRAPHICS_RENDERER=OPENGLES3
@@ -63,6 +63,7 @@ If you set nothing, CNA chooses for you: `WEBGL2` on the web, `OPENGLES3` on Lin
 | `SOFTWARE` | Linux, Windows, macOS, Android (+ Web experimental) | 2D+3D | **none** | none | every PR | Real CPU rasterizer. Creates no window and does not link SDL3, so Present() puts nothing on screen -- it is a compute/test renderer, not a display one. |
 | `STUB` | Linux, Windows, macOS, Android (+ Web experimental) | 2D+3D | **none** | none | every PR | Deliberate no-op renderer. Draws nothing, touches no GPU or window. |
 | `PORTABLEGL` | Linux, Windows, macOS | 2D+3D | **none** | PortableGL single header via FetchContent | broad matrix | CPU OpenGL 3.x-style pipeline. Links no SDL3 and needs no display at all. |
+| `TINYGL` | Linux, Windows, macOS, Android | 2D+3D | **none** | C-Chads/tinygl via FetchContent | broad matrix | CPU fixed-function OpenGL 1.x subset. Links no SDL3 and needs no display at all. |
 
 ## 2D vector rasterizers
 
@@ -71,6 +72,7 @@ If you set nothing, CNA chooses for you: `WEBGL2` on the web, `OPENGLES3` on Lin
 | `SKIA` | Linux, Windows, macOS | 2D | window | a Skia you built yourself (CNA_SKIA_ROOT + CNA_SKIA_BUILD_DIR) | on demand | Skia is never fetched: CNA fails configure unless you point it at your own build. |
 | `BLEND2D` | Linux, Windows, macOS | 2D | window | Blend2D + asmjit via FetchContent | broad matrix | Blend2D CPU vector rasterizer, presented through an SDL texture. |
 | `OPENVG` | Linux, Windows, macOS | 2D | window | ShivaVG via FetchContent + system OpenGL | broad matrix | OpenVG 1.1 vector graphics on a fixed-function desktop GL context. |
+| `NANOVG` | Linux, Windows, macOS | 2D | window | NanoVG via FetchContent + system OpenGL | broad matrix | NanoVG vector graphics through its desktop OpenGL 2 backend. |
 
 ## Browser DOM
 
@@ -79,6 +81,7 @@ If you set nothing, CNA chooses for you: `WEBGL2` on the web, `OPENGLES3` on Lin
 | `CANVAS` | Web | 2D | window | none | broad matrix | Browser 2D canvas context. Needs no WebGL at all. |
 | `HTML_DOM` | Web | 2D | window | none | broad matrix | Draws sprites as pooled CSS-transformed <div> elements. No WebGL. |
 | `SVG_DOM` | Web | 2D | window | none | broad matrix | Draws sprites as real <svg>/<image> elements. No WebGL. |
+| `PIXIJS` | Web | 2D | window | pinned PixiJS v7 UMD build | broad matrix | PixiJS retained-mode WebGL scene graph for SpriteBatch and render targets. |
 
 ## Portable middleware
 
@@ -90,6 +93,7 @@ If you set nothing, CNA chooses for you: `WEBGL2` on the web, `OPENGLES3` on Lin
 | `SOKOL` | Linux, Windows, macOS | 2D+3D | window | sokol single header via FetchContent + system OpenGL | broad matrix | Adds CNA_SOKOL_API (GLCORE default; only GLCORE is verified upstream). |
 | `DILIGENT` | Linux, Windows, macOS | 2D+3D | window | DiligentCore via FetchContent | on demand | Diligent picks D3D11/D3D12/Vulkan/GL/Metal at runtime. |
 | `LLGL` | Linux, Windows, macOS | 2D+3D | window | LLGL via FetchContent + system libshaderc | on demand | LLGL picks OpenGL or Vulkan at runtime. Needs libshaderc installed. |
+| `IGL` | Linux | 2D+3D | window | facebook/igl v1.1.1 plus selected bootstrap dependencies | on demand | Meta IGL with CNA's verified Linux OpenGL/GLX and Vulkan backends. |
 | `FNA3D` | Linux, Windows, macOS | 2D+3D | window | FNA3D + MojoShader via FetchContent; needs Python3 | broad matrix | The XNA-shaped C library FNA renders through. Picks SDL_GPU/D3D11/GL at runtime. |
 
 ## Legacy APIs
@@ -119,7 +123,7 @@ If you set nothing, CNA chooses for you: `WEBGL2` on the web, `OPENGLES3` on Lin
 
 ## Presets
 
-Renderers in common use have a ready-made preset; the rest are selected with `-DCNA_GRAPHICS_RENDERER=<NAME>` against any preset or a plain build directory. Every one of the 46 renderers above is selectable either way.
+Renderers in common use have a ready-made preset; the rest are selected with `-DCNA_GRAPHICS_RENDERER=<NAME>` against any preset or a plain build directory. Every one of the 50 renderers above is selectable either way.
 
 ```bash
 cmake --list-presets                 # what is available
@@ -128,4 +132,4 @@ cmake --build --preset opengles3     # build
 ctest --preset opengles3             # smoke test
 ```
 
-<sub>Cross-checked against CNA's own canonical list of 46 renderers at generation time.</sub>
+<sub>Cross-checked against CNA's own canonical list of 50 renderers at generation time.</sub>

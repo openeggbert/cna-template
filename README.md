@@ -34,7 +34,7 @@ loading, sprite drawing and input. Then delete `HelloGame` and write your own.
 
 - A working `Game` subclass with `LoadContent` / `Update` / `Draw`, texture
   loading, `SpriteBatch` drawing and keyboard input.
-- A build that works with **any** of CNA's 46 renderers, and refuses invalid
+- A build that works with **any** of CNA's 50 renderers, and refuses invalid
   renderer/platform combinations with an explanation rather than a link error.
 - Ready-made presets for the common renderers, generated from one manifest.
 - A smoke test that runs in CI with no display at all.

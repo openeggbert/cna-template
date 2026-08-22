@@ -213,6 +213,16 @@
       }
     },
     {
+      "name": "tinygl",
+      "displayName": "TINYGL \u2014 CPU fixed-function OpenGL 1.x subset",
+      "description": "2D3D renderer. Platforms: linux, windows, macos, android. Dependency: C-Chads/tinygl via FetchContent.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-tinygl",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "TINYGL"
+      }
+    },
+    {
       "name": "blend2d",
       "displayName": "BLEND2D \u2014 Blend2D CPU vector rasterizer, presented through an SDL texture",
       "description": "2D renderer. Platforms: linux, windows, macos. Dependency: Blend2D + asmjit via FetchContent.",
@@ -250,6 +260,16 @@
       "binaryDir": "${sourceDir}/build-web-svg-dom",
       "cacheVariables": {
         "CNA_GRAPHICS_RENDERER": "SVG_DOM"
+      }
+    },
+    {
+      "name": "web-pixijs",
+      "displayName": "PIXIJS \u2014 PixiJS retained-mode WebGL scene graph for SpriteBatch and render targets",
+      "description": "2D renderer. Platforms: web. Dependency: pinned PixiJS v7 UMD build.",
+      "inherits": "web-base",
+      "binaryDir": "${sourceDir}/build-web-pixijs",
+      "cacheVariables": {
+        "CNA_GRAPHICS_RENDERER": "PIXIJS"
       }
     },
     {
@@ -383,6 +403,10 @@
       "configurePreset": "portablegl"
     },
     {
+      "name": "tinygl",
+      "configurePreset": "tinygl"
+    },
+    {
       "name": "blend2d",
       "configurePreset": "blend2d"
     },
@@ -397,6 +421,10 @@
     {
       "name": "web-svg-dom",
       "configurePreset": "web-svg-dom"
+    },
+    {
+      "name": "web-pixijs",
+      "configurePreset": "web-pixijs"
     },
     {
       "name": "bgfx",
@@ -595,6 +623,18 @@
     {
       "name": "portablegl",
       "configurePreset": "portablegl",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "headless"
+        }
+      }
+    },
+    {
+      "name": "tinygl",
+      "configurePreset": "tinygl",
       "output": {
         "outputOnFailure": true
       },

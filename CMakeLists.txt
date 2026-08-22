@@ -3,7 +3,7 @@
 # =============================================================================
 # Everything renderer-specific in this file is driven by cmake/renderers.json
 # (see cmake/CnaRenderers.cmake). There is deliberately no per-renderer
-# if/elseif chain here: CNA has 46 renderers and keeps growing, so the template
+# if/elseif chain here: CNA has 50 renderers and keeps growing, so the template
 # treats the renderer set as data rather than as code.
 #
 # CMake 3.23 is the floor because the easy-gl/meta-gl siblings backing the
@@ -86,7 +86,7 @@ endif()
 # If you set nothing, CNA picks its own (WEBGL2 on the web, OPENGLES3 on Linux,
 # SDL_RENDERER elsewhere) and the template validates the result afterwards.
 #
-# CNA also exposes 46 CNA_RENDERER_<NAME> booleans as an alternative input path.
+# CNA also exposes 50 CNA_RENDERER_<NAME> booleans as an alternative input path.
 # They all default to OFF and CNA only consults them if one is switched ON, so
 # setting the string alone is sufficient and this file leaves them alone.
 if(DEFINED CNA_GRAPHICS_RENDERER AND NOT CNA_GRAPHICS_RENDERER STREQUAL "")
@@ -174,13 +174,12 @@ if(NOT TARGET SHARP_RUNTIME
     endforeach()
 endif()
 
-# The pinned CNA revision changed IGraphicsRenderer::CreateRenderTargetCube()
-# from four to five parameters but missed CanvasRenderer's declaration and
-# definition.  Keep the sibling checkout read-only: derive two build-tree
-# compatibility copies, verify the exact stale signatures before replacing
-# them, then compile CanvasRenderer.cpp against the corrected overlay header.
-# The strict guards make an upstream change fail visibly instead of silently
-# applying a stale textual patch.  See missing.md CNA-8.
+# Older CNA revisions changed IGraphicsRenderer::CreateRenderTargetCube() from
+# four to five parameters but missed CanvasRenderer's declaration and
+# definition. Keep the sibling checkout read-only: when that exact stale pair
+# is present, derive two corrected build-tree compatibility copies. Current CNA
+# already contains the fix, in which case no overlay is needed. See missing.md
+# CNA-8.
 if(EMSCRIPTEN
         AND CNA_GRAPHICS_RENDERER STREQUAL "CANVAS"
         AND TARGET cna_renderer_canvas)
@@ -207,15 +206,9 @@ if(EMSCRIPTEN
             bool mipMap = false, int multiSampleCount = 0) override;]=])
     string(FIND "${_canvas_header_content}"
         "${_canvas_old_header_signature}" _canvas_header_signature_position)
-    if(_canvas_header_signature_position EQUAL -1)
-        message(FATAL_ERROR
-            "cna-template: CNA's CanvasRenderer.hpp no longer has the expected "
-            "stale CreateRenderTargetCube signature. Remove or update the CNA-8 "
-            "compatibility block instead of applying it blindly.")
-    endif()
-    string(REPLACE "${_canvas_old_header_signature}"
-        "${_canvas_new_header_signature}"
-        _canvas_header_content "${_canvas_header_content}")
+    string(FIND "${_canvas_header_content}"
+        "int size, int depthFormat, bool preserveContents = false"
+        _canvas_new_header_signature_position)
 
     file(READ "${_canvas_source}" _canvas_source_content)
     set(_canvas_old_source_signature [=[
@@ -226,36 +219,48 @@ if(EMSCRIPTEN
         int size, int, bool, bool, int)]=])
     string(FIND "${_canvas_source_content}"
         "${_canvas_old_source_signature}" _canvas_source_signature_position)
-    if(_canvas_source_signature_position EQUAL -1)
-        message(FATAL_ERROR
-            "cna-template: CNA's CanvasRenderer.cpp no longer has the expected "
-            "stale CreateRenderTargetCube signature. Remove or update the CNA-8 "
-            "compatibility block instead of applying it blindly.")
-    endif()
-    string(REPLACE "${_canvas_old_source_signature}"
-        "${_canvas_new_source_signature}"
-        _canvas_source_content "${_canvas_source_content}")
+    string(FIND "${_canvas_source_content}"
+        "${_canvas_new_source_signature}" _canvas_new_source_signature_position)
 
-    file(MAKE_DIRECTORY
-        "${_canvas_compat_root}"
-        "${_canvas_compat_root}/include/CNA/Internal/Renderers/Canvas")
-    file(CONFIGURE OUTPUT "${_canvas_compat_header}"
-        CONTENT "${_canvas_header_content}" @ONLY)
-    file(CONFIGURE OUTPUT "${_canvas_compat_source}"
-        CONTENT "${_canvas_source_content}" @ONLY)
+    if(NOT _canvas_header_signature_position EQUAL -1
+            AND NOT _canvas_source_signature_position EQUAL -1)
+        string(REPLACE "${_canvas_old_header_signature}"
+            "${_canvas_new_header_signature}"
+            _canvas_header_content "${_canvas_header_content}")
+        string(REPLACE "${_canvas_old_source_signature}"
+            "${_canvas_new_source_signature}"
+            _canvas_source_content "${_canvas_source_content}")
 
-    get_target_property(_canvas_sources cna_renderer_canvas SOURCES)
-    list(FIND _canvas_sources "${_canvas_source}" _canvas_source_index)
-    if(_canvas_source_index EQUAL -1)
+        file(MAKE_DIRECTORY
+            "${_canvas_compat_root}"
+            "${_canvas_compat_root}/include/CNA/Internal/Renderers/Canvas")
+        file(CONFIGURE OUTPUT "${_canvas_compat_header}"
+            CONTENT "${_canvas_header_content}" @ONLY)
+        file(CONFIGURE OUTPUT "${_canvas_compat_source}"
+            CONTENT "${_canvas_source_content}" @ONLY)
+
+        get_target_property(_canvas_sources cna_renderer_canvas SOURCES)
+        list(FIND _canvas_sources "${_canvas_source}" _canvas_source_index)
+        if(_canvas_source_index EQUAL -1)
+            message(FATAL_ERROR
+                "cna-template: cannot locate CanvasRenderer.cpp in "
+                "cna_renderer_canvas; refusing an incomplete CNA-8 workaround.")
+        endif()
+        list(REMOVE_ITEM _canvas_sources "${_canvas_source}")
+        set_property(TARGET cna_renderer_canvas PROPERTY SOURCES
+            ${_canvas_sources} "${_canvas_compat_source}")
+        target_include_directories(cna_renderer_canvas BEFORE PRIVATE
+            "${_canvas_compat_root}/include")
+    elseif(NOT _canvas_new_header_signature_position EQUAL -1
+            AND NOT _canvas_new_source_signature_position EQUAL -1)
+        message(STATUS
+            "cna-template: CNA already contains the Canvas render-target fix")
+    else()
         message(FATAL_ERROR
-            "cna-template: cannot locate CanvasRenderer.cpp in "
-            "cna_renderer_canvas; refusing an incomplete CNA-8 workaround.")
+            "cna-template: CNA's Canvas CreateRenderTargetCube signatures do "
+            "not match either the known stale pair or the corrected pair. "
+            "Update the CNA-8 compatibility block instead of applying it blindly.")
     endif()
-    list(REMOVE_ITEM _canvas_sources "${_canvas_source}")
-    set_property(TARGET cna_renderer_canvas PROPERTY SOURCES
-        ${_canvas_sources} "${_canvas_compat_source}")
-    target_include_directories(cna_renderer_canvas BEFORE PRIVATE
-        "${_canvas_compat_root}/include")
 endif()
 
 # CNA has now resolved the renderer (ours or its own default) and published the
