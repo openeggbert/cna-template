@@ -355,13 +355,6 @@ elseif(EMSCRIPTEN)
     target_link_libraries(${_app} PRIVATE SDL3::SDL3)
     set_target_properties(${_app} PROPERTIES SUFFIX ".html")
 
-    # CNA enables the Wasm exception-handling ABI in its own directory scope.
-    # Directory properties propagate downward only, so this target -- defined in
-    # the parent scope -- must opt in explicitly or the link fails with
-    # "wasm-ld: undefined symbol: __cpp_exception".
-    target_compile_options(${_app} PRIVATE -fwasm-exceptions)
-    target_link_options(${_app} PRIVATE -fwasm-exceptions)
-
     target_link_options(${_app} PRIVATE
         -sALLOW_MEMORY_GROWTH=1
         -sSTACK_SIZE=1048576
